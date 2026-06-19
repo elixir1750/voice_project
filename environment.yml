@@ -1,0 +1,21 @@
+name: low-resource-asr
+channels:
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - ffmpeg
+  - libsndfile
+  - pip:
+      - torch>=2.3,<3
+      - torchaudio>=2.3,<3
+      - transformers>=4.45,<5
+      - datasets[audio]==4.8.5
+      - pyarrow==24.0.0
+      - jiwer>=3.0,<5
+      - scikit-learn>=1.4,<2
+      - pyyaml>=6.0,<7
+      - soundfile>=0.12,<1
+      - pytest>=8.0,<9
+      - tqdm>=4.66,<5
