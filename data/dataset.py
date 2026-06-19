@@ -64,6 +64,8 @@ def _decode_audio(audio: Any) -> tuple[Any, int]:
             return audio["array"], int(audio["sampling_rate"])
         if audio.get("path"):
             array, sample_rate = sf.read(audio["path"], always_2d=False)
+            if getattr(array, "ndim", 0) == 2:
+                array = array.T
             return array, int(sample_rate)
     if hasattr(audio, "get_all_samples"):
         samples = audio.get_all_samples()
@@ -76,6 +78,8 @@ def _decode_audio(audio: Any) -> tuple[Any, int]:
         return data, int(sample_rate)
     if isinstance(audio, (str, Path)):
         array, sample_rate = sf.read(audio, always_2d=False)
+        if getattr(array, "ndim", 0) == 2:
+            array = array.T
         return array, int(sample_rate)
     raise ValueError(f"Unsupported audio value: {type(audio).__name__}")
 
@@ -201,6 +205,12 @@ class LibriSpeechDataModule:
         training: bool,
         training_config: Mapping[str, Any],
     ) -> DataLoader:
+        num_workers = int(training_config.get("num_workers", 0))
+        if bool(self.config.get("streaming", True)) and num_workers > 1:
+            raise ValueError(
+                "Streaming ASR datasets require num_workers <= 1 to avoid "
+                "duplicating the limited iterable in each worker"
+            )
         dataset = _PreparedSpeechStream(
             source=self._load_stream(
                 split,
@@ -214,7 +224,7 @@ class LibriSpeechDataModule:
             dataset,
             batch_size=int(training_config.get("batch_size", 1)),
             collate_fn=self.collator,
-            num_workers=int(training_config.get("num_workers", 0)),
+            num_workers=num_workers,
             pin_memory=bool(training_config.get("pin_memory", False)),
         )
 

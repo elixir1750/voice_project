@@ -9,7 +9,11 @@ from torch import nn
 from models.ctc_decoder import LinearCTCDecoder, MLPCTCDecoder
 from models.interfaces import SpeechFeatures
 from models.registry import build_decoder, build_representation, build_ssl
-from models.ssl_extractor import Wav2Vec2Extractor, conv_output_lengths
+from models.ssl_extractor import (
+    Wav2Vec2Extractor,
+    conv_output_lengths,
+    normalize_waveforms,
+)
 
 
 def test_linear_decoder_preserves_time_lengths() -> None:
@@ -67,22 +71,25 @@ def test_wav2vec_feature_length_formula() -> None:
 
 
 class _FakeSSLModel(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, feat_extract_norm: str = "group") -> None:
         super().__init__()
         self.weight = nn.Parameter(torch.ones(1))
+        self.forward_kwargs = {}
         self.config = SimpleNamespace(
             hidden_size=4,
             conv_kernel=[4, 2],
             conv_stride=[2, 2],
+            feat_extract_norm=feat_extract_norm,
         )
 
     def forward(
         self,
         input_values: torch.Tensor,
-        attention_mask: torch.Tensor,
         output_hidden_states: bool,
+        **kwargs,
     ) -> SimpleNamespace:
-        del attention_mask, output_hidden_states
+        del output_hidden_states
+        self.forward_kwargs = kwargs
         batch_size = input_values.shape[0]
         hidden_states = (
             torch.zeros(batch_size, 4, 4, device=input_values.device),
@@ -137,3 +144,54 @@ def test_ssl_registry_builds_wav2vec2(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     assert isinstance(extractor, Wav2Vec2Extractor)
+
+
+def test_waveform_normalization_uses_only_valid_samples() -> None:
+    waveforms = torch.tensor(
+        [
+            [1.0, 2.0, 3.0, 0.0, 0.0],
+            [2.0, 4.0, 6.0, 8.0, 10.0],
+        ]
+    )
+    lengths = torch.tensor([3, 5])
+
+    normalized = normalize_waveforms(waveforms, lengths)
+
+    assert torch.allclose(normalized[0, 3:], torch.zeros(2))
+    assert torch.allclose(normalized[0, :3].mean(), torch.tensor(0.0), atol=1e-6)
+    assert torch.allclose(normalized[1].mean(), torch.tensor(0.0), atol=1e-6)
+    assert torch.allclose(
+        normalized[0, :3].var(unbiased=False),
+        torch.tensor(1.0),
+        atol=1e-5,
+    )
+
+
+def test_group_norm_wav2vec_omits_attention_mask(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model = _FakeSSLModel(feat_extract_norm="group")
+    monkeypatch.setattr(
+        "models.ssl_extractor.AutoModel.from_pretrained",
+        lambda *args, **kwargs: fake_model,
+    )
+    extractor = Wav2Vec2Extractor(model_name="fake")
+
+    extractor(torch.randn(2, 20), torch.tensor([20, 12]))
+
+    assert "attention_mask" not in fake_model.forward_kwargs
+
+
+def test_layer_norm_wav2vec_receives_attention_mask(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model = _FakeSSLModel(feat_extract_norm="layer")
+    monkeypatch.setattr(
+        "models.ssl_extractor.AutoModel.from_pretrained",
+        lambda *args, **kwargs: fake_model,
+    )
+    extractor = Wav2Vec2Extractor(model_name="fake")
+
+    extractor(torch.randn(2, 20), torch.tensor([20, 12]))
+
+    assert fake_model.forward_kwargs["attention_mask"].shape == (2, 20)

@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import numpy as np
+import pytest
+import soundfile as sf
 import torch
 
 from data.dataset import (
     ASRCollator,
     LibriSpeechDataModule,
+    _decode_audio,
     normalize_audio,
     take_samples,
 )
@@ -37,6 +43,21 @@ def test_normalize_audio_converts_stereo_to_mono() -> None:
 
     assert mono.shape == (8,)
     assert torch.allclose(mono, torch.full((8,), 0.5))
+
+
+def test_soundfile_stereo_preserves_time_axis(tmp_path: Path) -> None:
+    path = tmp_path / "stereo.wav"
+    channel_last = np.stack(
+        [np.ones(100, dtype=np.float32), np.zeros(100, dtype=np.float32)],
+        axis=1,
+    )
+    sf.write(path, channel_last, 16_000)
+
+    decoded, sample_rate = _decode_audio(path)
+    mono = normalize_audio(decoded, sample_rate, 16_000)
+
+    assert mono.shape == (100,)
+    assert torch.allclose(mono, torch.full((100,), 0.5), atol=1e-4)
 
 
 def test_normalize_audio_resamples() -> None:
@@ -128,3 +149,18 @@ def test_data_module_limits_stream_before_shuffle(
     assert load_arguments["batch_size"] == 64
     assert load_arguments["fragment_scan_options"].pre_buffer is False
     assert calls == [("take", 64), ("shuffle", 64)]
+
+
+def test_streaming_data_rejects_multiple_workers() -> None:
+    module = LibriSpeechDataModule(
+        config={"streaming": True, "sample_rate": 16_000},
+        tokenizer=CharacterCTCTokenizer(),
+    )
+
+    with pytest.raises(ValueError, match="num_workers"):
+        module._dataloader(
+            split="validation",
+            sample_limit=2,
+            training=False,
+            training_config={"batch_size": 1, "num_workers": 2},
+        )

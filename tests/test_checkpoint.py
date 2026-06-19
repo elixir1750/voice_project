@@ -36,3 +36,28 @@ def test_checkpoint_round_trip_restores_model_optimizer_and_metadata(
     assert payload["config"]["experiment"]["name"] == "test"
     assert payload["tokenizer"]["tokens"] == tokenizer.tokens
     assert payload["training_state"]["global_step"] == 7
+
+
+def test_checkpoint_loader_uses_restricted_weights_only_mode(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checkpoint_path = tmp_path / "model.pt"
+    checkpoint_path.touch()
+    arguments = {}
+
+    def fake_load(path, **kwargs):
+        arguments.update(kwargs)
+        return {
+            "model_state": {},
+            "optimizer_state": None,
+            "config": {},
+            "tokenizer": {},
+            "training_state": {},
+        }
+
+    monkeypatch.setattr(torch, "load", fake_load)
+
+    load_checkpoint(checkpoint_path)
+
+    assert arguments["weights_only"] is True

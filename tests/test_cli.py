@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from run import build_parser
 
 
@@ -42,10 +44,8 @@ def test_parser_accepts_transcribe_command() -> None:
     assert args.device == "auto"
 
 
-def test_parser_accepts_experiments_command() -> None:
-    args = build_parser().parse_args(
-        ["experiments", "--config", "configs/ablations.yaml"]
-    )
-
-    assert args.command == "experiments"
-    assert args.execute is False
+def test_parser_does_not_advertise_unimplemented_experiments_command() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(
+            ["experiments", "--config", "configs/ablations.yaml"]
+        )

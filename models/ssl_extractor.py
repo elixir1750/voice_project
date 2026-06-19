@@ -27,6 +27,23 @@ def conv_output_lengths(
     return output_lengths.clamp_min(0)
 
 
+def normalize_waveforms(
+    waveforms: torch.Tensor,
+    waveform_lengths: torch.Tensor,
+    eps: float = 1e-7,
+) -> torch.Tensor:
+    normalized = torch.zeros_like(waveforms)
+    for index, length_tensor in enumerate(waveform_lengths):
+        length = int(length_tensor.item())
+        if length <= 0:
+            continue
+        valid = waveforms[index, :length]
+        mean = valid.mean()
+        variance = valid.var(unbiased=False)
+        normalized[index, :length] = (valid - mean) / torch.sqrt(variance + eps)
+    return normalized
+
+
 @register_ssl("wav2vec2")
 class Wav2Vec2Extractor(SSLExtractor):
     def __init__(
@@ -67,14 +84,17 @@ class Wav2Vec2Extractor(SSLExtractor):
             device=waveforms.device,
         ).unsqueeze(0)
         attention_mask = sample_positions < waveform_lengths.unsqueeze(1)
+        normalized_waveforms = normalize_waveforms(waveforms, waveform_lengths)
+        model_arguments = {
+            "input_values": normalized_waveforms,
+            "output_hidden_states": True,
+        }
+        if getattr(self.model.config, "feat_extract_norm", "group") == "layer":
+            model_arguments["attention_mask"] = attention_mask.to(dtype=torch.long)
 
         context = torch.no_grad() if self.frozen else nullcontext()
         with context:
-            outputs = self.model(
-                input_values=waveforms,
-                attention_mask=attention_mask.to(dtype=torch.long),
-                output_hidden_states=True,
-            )
+            outputs = self.model(**model_arguments)
 
         hidden_states = outputs.hidden_states
         if hidden_states is None:

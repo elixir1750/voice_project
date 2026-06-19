@@ -36,12 +36,6 @@ def build_parser() -> argparse.ArgumentParser:
     transcribe_parser.add_argument("--audio", required=True)
     transcribe_parser.add_argument("--device", default="auto")
 
-    experiments_parser = subparsers.add_parser(
-        "experiments",
-        help="Expand or execute an ablation matrix",
-    )
-    experiments_parser.add_argument("--config", required=True)
-    experiments_parser.add_argument("--execute", action="store_true")
     return parser
 
 
@@ -62,10 +56,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             audio_path=args.audio,
             device=args.device,
         )
-    elif args.command == "experiments":
-        from run_experiments import run_experiments
-
-        run_experiments(args.config, execute=args.execute)
     else:
         raise RuntimeError(f"Unhandled command: {args.command}")
     return 0

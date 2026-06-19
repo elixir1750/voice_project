@@ -52,11 +52,11 @@
 
 | 指标 | 数值 |
 | --- | ---: |
-| Train loss | 5.0143 |
-| Validation loss | 3.0255 |
+| Train loss | 4.9636 |
+| Validation loss | 3.0465 |
 | WER | 1.0000 |
 | CER | 1.0000 |
-| Evaluation RTF | 约 0.020 |
+| Evaluation RTF | 约 0.022 |
 
 训练、独立评估、checkpoint 恢复和真实单音频推理均已成功执行并正常退出。
 
@@ -147,7 +147,7 @@ outputs/quick_test/
 └── epoch_1.json
 ```
 
-macOS 流式读取默认使用 `num_workers: 1`，让 Hugging Face/PyArrow 数据读取与主训练进程隔离。不要在 macOS 上将其改为 0，否则第三方 Arrow 线程池可能在进程退出时挂起。
+流式读取统一使用 `num_workers: 1`：既让 Hugging Face/PyArrow 数据读取与主训练进程隔离，也避免多个 worker 重复消费同一份有限数据流。
 
 PyTorch 当前没有原生 MPS CTC loss kernel。本项目会让 wav2vec2 和 Decoder 保持在 MPS 上运行，并仅将 CTC loss 计算回退到 CPU；CUDA 不需要该回退。
 

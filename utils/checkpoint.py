@@ -51,7 +51,7 @@ def load_checkpoint(
     payload = torch.load(
         checkpoint_path,
         map_location=map_location,
-        weights_only=False,
+        weights_only=True,
     )
     if not isinstance(payload, dict):
         raise ValueError("Checkpoint payload must be a mapping")
