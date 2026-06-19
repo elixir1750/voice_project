@@ -1,0 +1,45 @@
+experiment:
+  name: quick_test
+  seed: 42
+
+data:
+  dataset_name: librispeech_asr
+  dataset_config: clean
+  train_split: train.100
+  validation_split: validation
+  streaming: true
+  train_samples: 64
+  validation_samples: 16
+  sample_rate: 16000
+  shuffle_buffer: 256
+
+tokenizer:
+  type: character_ctc
+
+ssl:
+  type: wav2vec2
+  model_name: facebook/wav2vec2-base
+  frozen: true
+  layer: -1
+
+representation:
+  type: continuous
+
+decoder:
+  type: linear
+  dropout: 0.1
+
+training:
+  epochs: 1
+  batch_size: 2
+  learning_rate: 0.001
+  weight_decay: 0.0
+  grad_clip: 1.0
+  num_workers: 1
+  pin_memory: false
+  amp: false
+
+runtime:
+  device: auto
+  output_dir: outputs/quick_test
+  cache_dir: hf_cache
