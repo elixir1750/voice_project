@@ -25,6 +25,7 @@ experiments:
   - name: decoder_linear_layer9
     overrides:
       ssl.layer: 9
+      training.save_checkpoints: false
       decoder:
         type: linear
         dropout: 0.1
@@ -32,10 +33,12 @@ experiments:
   - name: decoder_mlp_layer9
     overrides:
       ssl.layer: 9
+      training.save_checkpoints: false
 
   - name: decoder_transformer_layer9
     overrides:
       ssl.layer: 9
+      training.save_checkpoints: false
       decoder:
         type: transformer
         model_dim: 256

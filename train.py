@@ -116,6 +116,10 @@ def should_stop_early(
     return patience > 0 and epochs_without_improvement >= patience
 
 
+def should_save_checkpoints(training_config: Mapping[str, Any]) -> bool:
+    return bool(training_config.get("save_checkpoints", True))
+
+
 def build_scheduler(
     optimizer: torch.optim.Optimizer,
     training_config: Mapping[str, Any],
@@ -324,6 +328,7 @@ def fit(
             scheduler=scheduler,
         )
         state.update(payload["training_state"])
+    checkpoint_saving_enabled = should_save_checkpoints(training_config)
 
     output_dir = Path(config["runtime"]["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -391,18 +396,9 @@ def fit(
             json.dumps(summary, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        save_checkpoint(
-            output_dir / "last.pt",
-            model=model,
-            optimizer=optimizer,
-            config=config,
-            tokenizer=tokenizer,
-            training_state=state,
-            scheduler=scheduler,
-        )
-        if improved:
+        if checkpoint_saving_enabled:
             save_checkpoint(
-                output_dir / "best.pt",
+                output_dir / "last.pt",
                 model=model,
                 optimizer=optimizer,
                 config=config,
@@ -410,6 +406,16 @@ def fit(
                 training_state=state,
                 scheduler=scheduler,
             )
+            if improved:
+                save_checkpoint(
+                    output_dir / "best.pt",
+                    model=model,
+                    optimizer=optimizer,
+                    config=config,
+                    tokenizer=tokenizer,
+                    training_state=state,
+                    scheduler=scheduler,
+                )
         if should_stop_early(
             int(state["epochs_without_improvement"]),
             int(training_config.get("early_stopping_patience", 0)),

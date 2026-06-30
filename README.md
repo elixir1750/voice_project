@@ -305,6 +305,10 @@ python run.py experiments \
 | `decoder_mlp_layer9` | MLP | 衡量逐帧非线性带来的收益 |
 | `decoder_transformer_layer9` | Transformer | 衡量跨帧上下文建模带来的收益 |
 
+研究 A 的 layer9 实验默认设置了 `training.save_checkpoints: false`，
+因此只保留 `config.yaml` 和每轮 `epoch_*.json`，不会生成较大的 `.pt`
+checkpoint。报告所需的 WER、CER、RTF 和参数量都在 JSON 中。
+
 ## 配置说明
 
 YAML 配置分为：
@@ -328,6 +332,7 @@ YAML 配置分为：
 | `scheduler` | `none` 或 `cosine` |
 | `min_learning_rate` | 余弦调度最低学习率 |
 | `early_stopping_patience` | 连续多少个 epoch 未改善 WER 后停止；`0` 表示关闭 |
+| `save_checkpoints` | 是否保存 `best.pt` 和 `last.pt`；关闭后仍保存 `config.yaml` 和每轮 `epoch_*.json` |
 
 ## 模块替换方法
 

@@ -10,6 +10,7 @@ from train import (
     ASRModel,
     count_model_parameters,
     ctc_compute_device,
+    should_save_checkpoints,
     should_stop_early,
     train_one_epoch,
     validate,
@@ -133,6 +134,12 @@ def test_early_stopping_can_be_disabled_or_triggered() -> None:
     assert not should_stop_early(epochs_without_improvement=10, patience=0)
     assert not should_stop_early(epochs_without_improvement=2, patience=3)
     assert should_stop_early(epochs_without_improvement=3, patience=3)
+
+
+def test_checkpoint_saving_defaults_on_and_can_be_disabled() -> None:
+    assert should_save_checkpoints({}) is True
+    assert should_save_checkpoints({"save_checkpoints": True}) is True
+    assert should_save_checkpoints({"save_checkpoints": False}) is False
 
 
 def test_count_model_parameters_separates_decoder_parameters() -> None:

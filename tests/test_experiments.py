@@ -137,3 +137,4 @@ def test_research_a_decoder_experiments_are_anchored_to_layer_9() -> None:
     ):
         assert experiments[name]["ssl"]["layer"] == 9
         assert experiments[name]["data"]["train_samples"] == 3600
+        assert experiments[name]["training"]["save_checkpoints"] is False
