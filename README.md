@@ -34,6 +34,7 @@
 | 批量消融实验 | ✅ 已完成 | YAML 实验矩阵，默认 dry-run，显式确认后训练 |
 | 研究 C：SSL 表征层 | ✅ 已完成 | 第 9 层在当前设置下取得最低 WER/CER |
 | 研究 A：Decoder 结构 | ✅ 已配置 | 以第 9 层为锚点，对比 Linear、MLP、Transformer |
+| 研究 B 附加分析 | ✅ 已配置 | 免标签统计离散单元的熵、perplexity 和死簇比例 |
 | CUDA / MPS / CPU | ✅ 已完成 | `auto` 按 CUDA → MPS → CPU 选择 |
 | HuBERT / WavLM | ⏳ 第二阶段 | 尚未实现 |
 | k-means 离散单元 | ⏳ 第二阶段 | 尚未实现 |
@@ -76,6 +77,8 @@ voice_project/
 ├── run_experiments.py     # 安全的实验矩阵预览与执行
 ├── environment.yml        # Conda 环境
 ├── requirements.txt       # Colab / pip 依赖
+├── analysis/
+│   └── cluster_usage.py   # 离散单元码本利用率分析
 ├── configs/
 │   ├── quick_test.yaml    # 真实小样本闭环
 │   ├── baseline.yaml      # 低资源基线配置
@@ -308,6 +311,72 @@ python run.py experiments \
 研究 A 的 layer9 实验默认设置了 `training.save_checkpoints: false`，
 因此只保留 `config.yaml` 和每轮 `epoch_*.json`，不会生成较大的 `.pt`
 checkpoint。报告所需的 WER、CER、RTF 和参数量都在 JSON 中。
+
+### 8. 研究 B 附加分析：码本利用率
+
+phone purity 需要帧级音素标签，LibriSpeech 默认没有这类标注；若不引入
+Montreal Forced Aligner 等强制对齐工具，推荐先做免标签的码本利用率分析。
+
+给定 k-means 产生的离散 token 序列，可以统计：
+
+- entropy bits：簇使用分布熵；
+- normalized entropy：除以 `log2(K)` 后的归一化熵；
+- perplexity：等效活跃簇数；
+- dead cluster ratio：死簇比例；
+- most used frequency：最高频簇占比。
+
+输入文件可以是 `.txt`、`.csv`、`.json`、`.npy` 或 `.npz`。文本文件中 token
+可用空格、换行或逗号分隔；JSON 可以是嵌套 list。
+
+```bash
+python run.py cluster-usage \
+  --assignments outputs/units_k128.txt outputs/units_k256.txt outputs/units_k512.txt \
+  --codebook-size 128 \
+  --codebook-size 256 \
+  --codebook-size 512 \
+  --output-dir results/research_b_cluster_usage
+```
+
+输出包括：
+
+```text
+results/research_b_cluster_usage/
+├── cluster_usage_summary.json
+├── cluster_usage_summary.csv
+└── cluster_usage_by_k.svg
+```
+
+如果后续有离散 ASR 的下游结果，可以准备一个 CSV：
+
+```csv
+codebook_size,wer,cer
+128,0.52,0.18
+256,0.49,0.16
+512,0.50,0.17
+```
+
+然后通过 `--downstream-metrics` 合并，便于分析“码本利用率”和 WER 是否一致：
+
+```bash
+python run.py cluster-usage \
+  --assignments outputs/units_k128.txt outputs/units_k256.txt outputs/units_k512.txt \
+  --codebook-size 128 \
+  --codebook-size 256 \
+  --codebook-size 512 \
+  --downstream-metrics results/discrete_wer.csv \
+  --output-dir results/research_b_cluster_usage
+```
+
+若希望把“几乎不用”的低频簇也视为死簇，可设置阈值。例如使用频率低于
+0.1% 的簇都算死簇：
+
+```bash
+python run.py cluster-usage \
+  --assignments outputs/units_k512.txt \
+  --codebook-size 512 \
+  --dead-min-frequency 0.001 \
+  --output-dir results/research_b_cluster_usage_k512
+```
 
 ## 配置说明
 

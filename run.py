@@ -58,6 +58,48 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run or preview only a named experiment; may be repeated",
     )
 
+    cluster_parser = subparsers.add_parser(
+        "cluster-usage",
+        help="Analyze unlabeled k-means unit usage for codebook utilization",
+    )
+    cluster_parser.add_argument(
+        "--assignments",
+        nargs="+",
+        required=True,
+        help="One or more token assignment files (.txt/.csv/.json/.npy/.npz)",
+    )
+    cluster_parser.add_argument(
+        "--codebook-size",
+        dest="codebook_sizes",
+        type=int,
+        action="append",
+        required=True,
+        help=(
+            "Codebook size K. Provide once for all files or repeat once per "
+            "assignment file"
+        ),
+    )
+    cluster_parser.add_argument("--output-dir", required=True)
+    cluster_parser.add_argument(
+        "--dead-min-count",
+        type=int,
+        default=0,
+        help="Treat clusters with count <= this value as dead",
+    )
+    cluster_parser.add_argument(
+        "--dead-min-frequency",
+        type=float,
+        default=0.0,
+        help="Also treat clusters with usage frequency below this value as dead",
+    )
+    cluster_parser.add_argument(
+        "--downstream-metrics",
+        help=(
+            "Optional CSV/JSON with name or codebook_size plus wer/cer columns "
+            "to join intrinsic unit metrics with downstream ASR results"
+        ),
+    )
+
     return parser
 
 
@@ -86,6 +128,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             matrix_path=args.matrix,
             execute=args.execute,
             names=args.names,
+        )
+    elif args.command == "cluster-usage":
+        from analysis.cluster_usage import write_cluster_usage_report
+
+        write_cluster_usage_report(
+            assignment_paths=args.assignments,
+            codebook_sizes=args.codebook_sizes,
+            output_dir=args.output_dir,
+            dead_min_count=args.dead_min_count,
+            dead_min_frequency=args.dead_min_frequency,
+            downstream_metrics_path=args.downstream_metrics,
         )
     else:
         raise RuntimeError(f"Unhandled command: {args.command}")
