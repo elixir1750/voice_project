@@ -6,7 +6,12 @@ import torch
 from torch import nn
 
 from models.interfaces import DecoderOutput
-from train import ctc_compute_device, train_one_epoch, validate
+from train import (
+    ctc_compute_device,
+    should_stop_early,
+    train_one_epoch,
+    validate,
+)
 from utils.tokenizer import CharacterCTCTokenizer
 
 
@@ -64,6 +69,37 @@ def test_one_fake_training_epoch_returns_finite_loss() -> None:
 
     assert math.isfinite(result["loss"])
     assert result["batches"] == 1
+    assert result["optimizer_steps"] == 1
+
+
+def test_gradient_accumulation_steps_final_partial_group() -> None:
+    tokenizer = CharacterCTCTokenizer()
+    model = _TinyASRModel(len(tokenizer))
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    original_step = optimizer.step
+    step_calls = 0
+
+    def counted_step(*args, **kwargs):
+        nonlocal step_calls
+        step_calls += 1
+        return original_step(*args, **kwargs)
+
+    optimizer.step = counted_step
+
+    result = train_one_epoch(
+        model=model,
+        dataloader=[_batch(tokenizer) for _ in range(3)],
+        optimizer=optimizer,
+        tokenizer=tokenizer,
+        device=torch.device("cpu"),
+        grad_clip=1.0,
+        amp=False,
+        gradient_accumulation_steps=2,
+    )
+
+    assert step_calls == 2
+    assert result["batches"] == 3
+    assert result["optimizer_steps"] == 2
 
 
 def test_fake_validation_returns_metrics_and_hypotheses() -> None:
@@ -89,3 +125,9 @@ def test_ctc_loss_falls_back_to_cpu_for_mps() -> None:
     assert ctc_compute_device(torch.device("mps")) == torch.device("cpu")
     assert ctc_compute_device(torch.device("cuda")) == torch.device("cuda")
     assert ctc_compute_device(torch.device("cpu")) == torch.device("cpu")
+
+
+def test_early_stopping_can_be_disabled_or_triggered() -> None:
+    assert not should_stop_early(epochs_without_improvement=10, patience=0)
+    assert not should_stop_early(epochs_without_improvement=2, patience=3)
+    assert should_stop_early(epochs_without_improvement=3, patience=3)

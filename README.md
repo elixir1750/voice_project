@@ -12,7 +12,7 @@
 流式 LibriSpeech
   → 冻结的 wav2vec 2.0
   → 连续 hidden states
-  → Linear / MLP CTC Decoder
+  → Linear / MLP / Transformer CTC Decoder
   → CTC Greedy Decode
   → WER / CER / RTF
 ```
@@ -27,14 +27,14 @@
 | wav2vec2 特征提取 | ✅ 已完成 | 支持冻结/解冻和 hidden layer 选择 |
 | Linear CTC Decoder | ✅ 已完成 | 第一阶段默认 Decoder |
 | MLP CTC Decoder | ✅ 已完成 | 可通过 YAML 配置替换 |
-| 训练与断点恢复 | ✅ 已完成 | 保存 `best.pt`、`last.pt` 和完整配置 |
-| WER / CER / RTF | ✅ 已完成 | 训练验证和独立评估均会输出 |
-| 单音频推理 | ✅ 已完成 | 支持 WAV/FLAC、自动重采样 |
+| Transformer CTC Decoder | ✅ 已完成 | 支持 padding mask、位置编码和 registry 配置 |
+| 训练与断点恢复 | ✅ 已完成 | 支持梯度累积、余弦调度、Early Stopping 和 scheduler 恢复 |
+| WER / CER / RTF | ✅ 已完成 | 额外报告替换、删除、插入和命中数量 |
+| 单音频与批量推理 | ✅ 已完成 | 目录模式只加载一次模型，可保存 JSON |
+| 批量消融实验 | ✅ 已完成 | YAML 实验矩阵，默认 dry-run，显式确认后训练 |
 | CUDA / MPS / CPU | ✅ 已完成 | `auto` 按 CUDA → MPS → CPU 选择 |
 | HuBERT / WavLM | ⏳ 第二阶段 | 尚未实现 |
 | k-means 离散单元 | ⏳ 第二阶段 | 尚未实现 |
-| Transformer Decoder | ⏳ 第二阶段 | 尚未实现 |
-| 批量消融实验 | ⏳ 第二阶段 | 尚未实现和运行 |
 
 ## 已验证的真实 quick test
 
@@ -70,12 +70,14 @@ voice_project/
 ├── run.py                 # 统一命令入口
 ├── train.py               # ASR 组合模型与训练/验证循环
 ├── evaluate.py            # checkpoint 独立评估
-├── inference.py           # 单音频推理
+├── inference.py           # 单音频与目录批量推理
+├── run_experiments.py     # 安全的实验矩阵预览与执行
 ├── environment.yml        # Conda 环境
 ├── requirements.txt       # Colab / pip 依赖
 ├── configs/
 │   ├── quick_test.yaml    # 真实小样本闭环
-│   └── baseline.yaml      # 低资源基线配置
+│   ├── baseline.yaml      # 低资源基线配置
+│   └── experiments.yaml   # Decoder、层数和数据规模消融矩阵
 ├── data/
 │   └── dataset.py         # 流式 LibriSpeech、预处理与 collator
 ├── models/
@@ -193,7 +195,7 @@ python run.py evaluate \
 outputs/quick_test/evaluation.json
 ```
 
-### 5. 单音频推理
+### 5. 单音频与批量推理
 
 ```bash
 python run.py transcribe \
@@ -203,6 +205,16 @@ python run.py transcribe \
 
 支持 WAV 和 FLAC。输出包括转写文本、音频时长、推理耗时、RTF 和实际设备。
 
+也可以输入一个目录。模型和 checkpoint 只加载一次，目录中的
+WAV、FLAC、MP3、OGG 文件按文件名顺序处理：
+
+```bash
+python run.py transcribe \
+  --checkpoint outputs/quick_test/best.pt \
+  --audio path/to/audio_dir \
+  --output outputs/transcriptions.json
+```
+
 ### 6. 断点续训
 
 ```bash
@@ -210,6 +222,37 @@ python run.py train \
   --config configs/baseline.yaml \
   --resume outputs/baseline_wav2vec2_mlp/last.pt
 ```
+
+断点中会同时保存并恢复模型、优化器、scheduler 和 Early Stopping 状态。
+
+### 7. 预览和运行实验矩阵
+
+先预览，不会下载模型、读取数据或开始训练：
+
+```bash
+python run.py experiments --matrix configs/experiments.yaml
+```
+
+只预览指定实验：
+
+```bash
+python run.py experiments \
+  --matrix configs/experiments.yaml \
+  --name decoder_transformer
+```
+
+确认配置和输出目录无误后，显式加入 `--execute`：
+
+```bash
+python run.py experiments \
+  --matrix configs/experiments.yaml \
+  --name decoder_transformer \
+  --execute
+```
+
+`configs/experiments.yaml` 当前包含 Linear、MLP、Transformer Decoder，
+hidden layer 和训练样本规模对比。离散单元尚未可靠实现，因此实验加载器会
+主动拒绝离散表示配置，避免生成名义上离散、实际上仍使用连续特征的无效结果。
 
 ## 配置说明
 
@@ -225,6 +268,15 @@ YAML 配置分为：
 | `decoder` | Decoder 类型与参数 |
 | `training` | epoch、batch、学习率和 DataLoader |
 | `runtime` | 设备、输出目录和缓存目录 |
+
+训练控制字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `gradient_accumulation_steps` | 累积多少个 batch 后更新一次参数；最后不足一组也会更新 |
+| `scheduler` | `none` 或 `cosine` |
+| `min_learning_rate` | 余弦调度最低学习率 |
+| `early_stopping_patience` | 连续多少个 epoch 未改善 WER 后停止；`0` 表示关闭 |
 
 ## 模块替换方法
 
@@ -252,6 +304,20 @@ YAML 配置分为：
 4. 使用 `@register_decoder("名称")` 注册；
 5. 在 YAML 中设置 `decoder.type`。
 
+Transformer 示例：
+
+```yaml
+decoder:
+  type: transformer
+  model_dim: 256
+  num_heads: 4
+  num_layers: 2
+  feedforward_dim: 1024
+  dropout: 0.1
+```
+
+`model_dim` 必须能被 `num_heads` 整除。
+
 ## 指标
 
 | 指标 | 含义 |
@@ -259,6 +325,8 @@ YAML 配置分为：
 | WER | Word Error Rate，词错误率 |
 | CER | Character Error Rate，字符错误率 |
 | RTF | 推理耗时 / 音频时长 |
+| Substitutions / Deletions / Insertions | WER 的替换、删除和插入错误数量 |
+| Hits | 正确识别的词数量 |
 | Token Rate | 离散单元模式下每秒 token 数，第二阶段 |
 | Bitrate | 离散表示信息率，第二阶段 |
 | Codebook Size | 离散单元词表大小，第二阶段 |

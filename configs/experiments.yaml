@@ -1,0 +1,38 @@
+base_config: baseline.yaml
+
+# 默认仅预览。只有 run.py experiments ... --execute 才会开始训练。
+experiments:
+  - name: baseline_mlp
+    overrides: {}
+
+  - name: decoder_linear
+    overrides:
+      decoder:
+        type: linear
+        dropout: 0.1
+
+  - name: decoder_transformer
+    overrides:
+      decoder:
+        type: transformer
+        model_dim: 256
+        num_heads: 4
+        num_layers: 2
+        feedforward_dim: 1024
+        dropout: 0.1
+
+  - name: hidden_layer_6
+    overrides:
+      ssl.layer: 6
+
+  - name: hidden_layer_9
+    overrides:
+      ssl.layer: 9
+
+  - name: train_samples_1800
+    overrides:
+      data.train_samples: 1800
+
+  - name: train_samples_7200
+    overrides:
+      data.train_samples: 7200

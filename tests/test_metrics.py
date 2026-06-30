@@ -15,7 +15,29 @@ def test_error_rates_detect_transcription_errors() -> None:
 def test_error_rates_are_zero_for_identical_text() -> None:
     result = compute_error_rates(["hello world"], ["hello world"])
 
-    assert result == {"wer": 0.0, "cer": 0.0}
+    assert result == {
+        "wer": 0.0,
+        "cer": 0.0,
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "hits": 2,
+        "reference_words": 2,
+    }
+
+
+def test_error_rates_report_word_error_counts() -> None:
+    result = compute_error_rates(
+        ["one two three", "four five"],
+        ["one too three extra", "four"],
+    )
+
+    assert result["substitutions"] == 1
+    assert result["deletions"] == 1
+    assert result["insertions"] == 1
+    assert result["hits"] == 3
+    assert result["reference_words"] == 5
+    assert result["wer"] == pytest.approx(3 / 5)
 
 
 def test_rtf_is_inference_time_divided_by_audio_time() -> None:

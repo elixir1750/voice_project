@@ -37,15 +37,21 @@ def test_parser_accepts_transcribe_command() -> None:
             "outputs/quick_test/best.pt",
             "--audio",
             "sample.flac",
+            "--output",
+            "outputs/transcriptions.json",
         ]
     )
 
     assert args.command == "transcribe"
     assert args.device == "auto"
+    assert args.output == "outputs/transcriptions.json"
 
 
-def test_parser_does_not_advertise_unimplemented_experiments_command() -> None:
-    with pytest.raises(SystemExit):
-        build_parser().parse_args(
-            ["experiments", "--config", "configs/ablations.yaml"]
-        )
+def test_parser_accepts_safe_experiments_dry_run() -> None:
+    args = build_parser().parse_args(
+        ["experiments", "--matrix", "configs/experiments.yaml"]
+    )
+
+    assert args.command == "experiments"
+    assert args.execute is False
+    assert args.names == []

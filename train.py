@@ -90,6 +90,30 @@ def ctc_compute_device(model_device: torch.device) -> torch.device:
     return model_device
 
 
+def should_stop_early(
+    epochs_without_improvement: int,
+    patience: int,
+) -> bool:
+    return patience > 0 and epochs_without_improvement >= patience
+
+
+def build_scheduler(
+    optimizer: torch.optim.Optimizer,
+    training_config: Mapping[str, Any],
+    epochs: int,
+) -> torch.optim.lr_scheduler.LRScheduler | None:
+    scheduler_type = str(training_config.get("scheduler", "none")).lower()
+    if scheduler_type in {"none", "off", "disabled"}:
+        return None
+    if scheduler_type == "cosine":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=max(1, epochs),
+            eta_min=float(training_config.get("min_learning_rate", 0.0)),
+        )
+    raise ValueError(f"Unknown scheduler: {scheduler_type}")
+
+
 def _ctc_loss(
     output: DecoderOutput,
     targets: torch.Tensor,
@@ -135,38 +159,64 @@ def train_one_epoch(
     device: torch.device,
     grad_clip: float = 1.0,
     amp: bool = False,
+    gradient_accumulation_steps: int = 1,
 ) -> dict[str, float | int]:
+    if gradient_accumulation_steps <= 0:
+        raise ValueError("gradient_accumulation_steps must be positive")
     model.train()
     use_amp = bool(amp and supports_amp(device))
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
     total_loss = 0.0
     batches = 0
+    optimizer_steps = 0
+    batches_since_step = 0
+    optimizer.zero_grad(set_to_none=True)
 
     for batch in tqdm(dataloader, desc="train", leave=False):
         waveforms, waveform_lengths, targets, target_lengths = _move_batch(
             batch,
             device,
         )
-        optimizer.zero_grad(set_to_none=True)
         with torch.autocast(
             device_type=device.type,
             enabled=use_amp,
         ):
             output = model(waveforms, waveform_lengths)
             loss = _ctc_loss(output, targets, target_lengths, tokenizer.blank_id)
-        scaler.scale(loss).backward()
-        if grad_clip > 0:
-            scaler.unscale_(optimizer)
-            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-        scaler.step(optimizer)
-        scaler.update()
+        scaler.scale(loss / gradient_accumulation_steps).backward()
 
         total_loss += float(loss.detach().cpu())
         batches += 1
+        batches_since_step += 1
+        if batches_since_step == gradient_accumulation_steps:
+            scaler.unscale_(optimizer)
+            if grad_clip > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad(set_to_none=True)
+            optimizer_steps += 1
+            batches_since_step = 0
 
     if batches == 0:
         raise RuntimeError("Training dataloader produced no batches")
-    return {"loss": total_loss / batches, "batches": batches}
+    if batches_since_step:
+        scaler.unscale_(optimizer)
+        correction = gradient_accumulation_steps / batches_since_step
+        for parameter in model.parameters():
+            if parameter.grad is not None:
+                parameter.grad.mul_(correction)
+        if grad_clip > 0:
+            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        scaler.step(optimizer)
+        scaler.update()
+        optimizer.zero_grad(set_to_none=True)
+        optimizer_steps += 1
+    return {
+        "loss": total_loss / batches,
+        "batches": batches,
+        "optimizer_steps": optimizer_steps,
+    }
 
 
 @torch.no_grad()
@@ -236,10 +286,23 @@ def fit(
         lr=float(training_config.get("learning_rate", 1e-3)),
         weight_decay=float(training_config.get("weight_decay", 0.0)),
     )
-    state = {"epoch": 0, "global_step": 0, "best_wer": math.inf}
+    epochs = int(training_config.get("epochs", 1))
+    scheduler = build_scheduler(optimizer, training_config, epochs)
+    state = {
+        "epoch": 0,
+        "global_step": 0,
+        "optimizer_step": 0,
+        "best_wer": math.inf,
+        "epochs_without_improvement": 0,
+    }
     if resume is not None:
         payload = load_checkpoint(resume, map_location=device)
-        restore_checkpoint(payload, model=model, optimizer=optimizer)
+        restore_checkpoint(
+            payload,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+        )
         state.update(payload["training_state"])
 
     output_dir = Path(config["runtime"]["output_dir"])
@@ -251,7 +314,6 @@ def fit(
         cache_dir=config["runtime"].get("cache_dir"),
     )
 
-    epochs = int(training_config.get("epochs", 1))
     for epoch in range(int(state["epoch"]), epochs):
         train_metrics = train_one_epoch(
             model=model,
@@ -261,6 +323,9 @@ def fit(
             device=device,
             grad_clip=float(training_config.get("grad_clip", 1.0)),
             amp=bool(training_config.get("amp", False)),
+            gradient_accumulation_steps=int(
+                training_config.get("gradient_accumulation_steps", 1)
+            ),
         )
         validation_metrics = validate(
             model=model,
@@ -272,15 +337,28 @@ def fit(
         state["global_step"] = int(state["global_step"]) + int(
             train_metrics["batches"]
         )
+        state["optimizer_step"] = int(
+            state.get("optimizer_step", 0)
+        ) + int(
+            train_metrics["optimizer_steps"]
+        )
         current_wer = float(validation_metrics["wer"])
         improved = current_wer < float(state["best_wer"])
         if improved:
             state["best_wer"] = current_wer
+            state["epochs_without_improvement"] = 0
+        else:
+            state["epochs_without_improvement"] = int(
+                state.get("epochs_without_improvement", 0)
+            ) + 1
+        if scheduler is not None:
+            scheduler.step()
 
         summary = {
             "epoch": epoch + 1,
             "device": str(device),
             "train": train_metrics,
+            "learning_rate": float(optimizer.param_groups[0]["lr"]),
             "validation": {
                 key: value
                 for key, value in validation_metrics.items()
@@ -299,6 +377,7 @@ def fit(
             config=config,
             tokenizer=tokenizer,
             training_state=state,
+            scheduler=scheduler,
         )
         if improved:
             save_checkpoint(
@@ -308,7 +387,13 @@ def fit(
                 config=config,
                 tokenizer=tokenizer,
                 training_state=state,
+                scheduler=scheduler,
             )
+        if should_stop_early(
+            int(state["epochs_without_improvement"]),
+            int(training_config.get("early_stopping_patience", 0)),
+        ):
+            break
 
     return {
         "device": str(device),

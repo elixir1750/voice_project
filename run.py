@@ -5,7 +5,7 @@ from collections.abc import Sequence
 
 from config import apply_overrides, load_config
 from evaluate import evaluate_from_paths
-from inference import transcribe_audio
+from inference import transcribe_path
 from train import fit
 
 
@@ -30,11 +30,33 @@ def build_parser() -> argparse.ArgumentParser:
 
     transcribe_parser = subparsers.add_parser(
         "transcribe",
-        help="Transcribe a WAV or FLAC file",
+        help="Transcribe one audio file or all supported files in a directory",
     )
     transcribe_parser.add_argument("--checkpoint", required=True)
     transcribe_parser.add_argument("--audio", required=True)
     transcribe_parser.add_argument("--device", default="auto")
+    transcribe_parser.add_argument(
+        "--output",
+        help="Optional JSON output path (recommended for directory input)",
+    )
+
+    experiments_parser = subparsers.add_parser(
+        "experiments",
+        help="Preview or execute a YAML experiment matrix",
+    )
+    experiments_parser.add_argument("--matrix", required=True)
+    experiments_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Actually train experiments; without this flag only preview",
+    )
+    experiments_parser.add_argument(
+        "--name",
+        dest="names",
+        action="append",
+        default=[],
+        help="Run or preview only a named experiment; may be repeated",
+    )
 
     return parser
 
@@ -51,10 +73,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             overrides=args.set,
         )
     elif args.command == "transcribe":
-        transcribe_audio(
+        transcribe_path(
             checkpoint=args.checkpoint,
             audio_path=args.audio,
             device=args.device,
+            output_path=args.output,
+        )
+    elif args.command == "experiments":
+        from run_experiments import run_experiment_matrix
+
+        run_experiment_matrix(
+            matrix_path=args.matrix,
+            execute=args.execute,
+            names=args.names,
         )
     else:
         raise RuntimeError(f"Unhandled command: {args.command}")

@@ -8,14 +8,24 @@ import jiwer
 def compute_error_rates(
     references: Sequence[str],
     hypotheses: Sequence[str],
-) -> dict[str, float]:
+) -> dict[str, float | int]:
     if len(references) != len(hypotheses):
         raise ValueError("References and hypotheses must have equal length")
     if not references:
         raise ValueError("At least one reference is required")
+    word_output = jiwer.process_words(list(references), list(hypotheses))
     return {
-        "wer": float(jiwer.wer(list(references), list(hypotheses))),
+        "wer": float(word_output.wer),
         "cer": float(jiwer.cer(list(references), list(hypotheses))),
+        "substitutions": int(word_output.substitutions),
+        "deletions": int(word_output.deletions),
+        "insertions": int(word_output.insertions),
+        "hits": int(word_output.hits),
+        "reference_words": int(
+            word_output.hits
+            + word_output.substitutions
+            + word_output.deletions
+        ),
     }
 
 
