@@ -32,6 +32,7 @@
 | WER / CER / RTF | ✅ 已完成 | 额外报告替换、删除、插入和命中数量 |
 | 单音频与批量推理 | ✅ 已完成 | 目录模式只加载一次模型，可保存 JSON |
 | 批量消融实验 | ✅ 已完成 | YAML 实验矩阵，默认 dry-run，显式确认后训练 |
+| 研究 C：SSL 表征层 | ✅ 已完成 | 第 9 层在当前设置下取得最低 WER/CER |
 | CUDA / MPS / CPU | ✅ 已完成 | `auto` 按 CUDA → MPS → CPU 选择 |
 | HuBERT / WavLM | ⏳ 第二阶段 | 尚未实现 |
 | k-means 离散单元 | ⏳ 第二阶段 | 尚未实现 |
@@ -92,9 +93,33 @@ voice_project/
 │   ├── metrics.py         # WER / CER / RTF
 │   └── checkpoint.py      # checkpoint 保存与恢复
 ├── tests/                 # 不下载大模型的离线测试
+├── results/               # 可追踪的轻量实验结果、表格和图片
 ├── outputs/               # 实验输出，不提交 Git
 └── hf_cache/              # Hugging Face 缓存，不提交 Git
 ```
+
+## 已追踪的研究结果
+
+完整训练输出、checkpoint 和缓存默认写入 `outputs/`，不提交 Git。用于报告的轻量结果会整理到 `results/`，可以随仓库追踪。
+
+### 研究 C：SSL 表征层选择
+
+研究 C 固定连续表征、MLP CTC decoder、3600 条 LibriSpeech 训练样本和 500 条验证样本，只改变取用的 wav2vec2 hidden layer。
+
+| 实验 | 层号 | 最佳 epoch | WER | CER | Loss |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `hidden_layer_6` | 6 | 10 | 0.4138 | 0.1186 | 0.4604 |
+| `hidden_layer_9` | 9 | 10 | 0.2954 | 0.0768 | 0.3088 |
+| `baseline_mlp` | 12 | 10 | 0.8596 | 0.3426 | 1.1925 |
+
+结论：第 9 层表征在当前设置下效果最好，后续研究 A / B / D 建议以 `ssl.layer: 9` 作为默认锚点。
+
+可追踪文件见：
+
+- `results/research_c/summary.csv`
+- `results/research_c/epoch_metrics.csv`
+- `results/research_c/wer_by_layer.png`
+- `results/research_c/wer_by_epoch.png`
 
 ## 环境安装
 
