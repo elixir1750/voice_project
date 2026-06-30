@@ -72,6 +72,25 @@ def build_model_from_config(
     return ASRModel(ssl=ssl, representation=representation, decoder=decoder)
 
 
+def count_model_parameters(model: nn.Module) -> dict[str, int]:
+    decoder = getattr(model, "decoder", None)
+    decoder_parameters = list(decoder.parameters()) if decoder is not None else []
+    return {
+        "total": sum(parameter.numel() for parameter in model.parameters()),
+        "trainable": sum(
+            parameter.numel()
+            for parameter in model.parameters()
+            if parameter.requires_grad
+        ),
+        "decoder": sum(parameter.numel() for parameter in decoder_parameters),
+        "decoder_trainable": sum(
+            parameter.numel()
+            for parameter in decoder_parameters
+            if parameter.requires_grad
+        ),
+    }
+
+
 def _move_batch(
     batch: Mapping[str, Any],
     device: torch.device,
@@ -275,6 +294,7 @@ def fit(
     device = resolve_device(str(config["runtime"].get("device", "auto")))
     tokenizer = CharacterCTCTokenizer()
     model = build_model_from_config(config, tokenizer).to(device)
+    parameter_counts = count_model_parameters(model)
     trainable_parameters = [
         parameter for parameter in model.parameters() if parameter.requires_grad
     ]
@@ -357,6 +377,7 @@ def fit(
         summary = {
             "epoch": epoch + 1,
             "device": str(device),
+            "parameters": parameter_counts,
             "train": train_metrics,
             "learning_rate": float(optimizer.param_groups[0]["lr"]),
             "validation": {

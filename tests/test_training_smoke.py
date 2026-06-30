@@ -7,6 +7,8 @@ from torch import nn
 
 from models.interfaces import DecoderOutput
 from train import (
+    ASRModel,
+    count_model_parameters,
     ctc_compute_device,
     should_stop_early,
     train_one_epoch,
@@ -131,3 +133,21 @@ def test_early_stopping_can_be_disabled_or_triggered() -> None:
     assert not should_stop_early(epochs_without_improvement=10, patience=0)
     assert not should_stop_early(epochs_without_improvement=2, patience=3)
     assert should_stop_early(epochs_without_improvement=3, patience=3)
+
+
+def test_count_model_parameters_separates_decoder_parameters() -> None:
+    ssl = nn.Linear(3, 5)
+    for parameter in ssl.parameters():
+        parameter.requires_grad = False
+    representation = nn.Identity()
+    decoder = nn.Linear(5, 7)
+    model = ASRModel(ssl=ssl, representation=representation, decoder=decoder)
+
+    result = count_model_parameters(model)
+
+    assert result == {
+        "total": 62,
+        "trainable": 42,
+        "decoder": 42,
+        "decoder_trainable": 42,
+    }

@@ -21,6 +21,29 @@ experiments:
         feedforward_dim: 1024
         dropout: 0.1
 
+  # 研究 A：Decoder 结构。使用研究 C 找到的第 9 层作为锚点。
+  - name: decoder_linear_layer9
+    overrides:
+      ssl.layer: 9
+      decoder:
+        type: linear
+        dropout: 0.1
+
+  - name: decoder_mlp_layer9
+    overrides:
+      ssl.layer: 9
+
+  - name: decoder_transformer_layer9
+    overrides:
+      ssl.layer: 9
+      decoder:
+        type: transformer
+        model_dim: 256
+        num_heads: 4
+        num_layers: 2
+        feedforward_dim: 1024
+        dropout: 0.1
+
   - name: hidden_layer_6
     overrides:
       ssl.layer: 6

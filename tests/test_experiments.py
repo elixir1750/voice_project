@@ -111,3 +111,29 @@ def test_checked_experiment_matrix_contains_buildable_decoders() -> None:
             vocab_size=32,
         )
         assert decoder is not None
+
+
+def test_research_a_decoder_experiments_are_anchored_to_layer_9() -> None:
+    experiments = {
+        item["name"]: item["config"]
+        for item in load_experiment_matrix("configs/experiments.yaml")
+    }
+
+    assert {
+        "decoder_linear_layer9",
+        "decoder_mlp_layer9",
+        "decoder_transformer_layer9",
+    }.issubset(experiments)
+    assert experiments["decoder_linear_layer9"]["decoder"]["type"] == "linear"
+    assert experiments["decoder_mlp_layer9"]["decoder"]["type"] == "mlp"
+    assert (
+        experiments["decoder_transformer_layer9"]["decoder"]["type"]
+        == "transformer"
+    )
+    for name in (
+        "decoder_linear_layer9",
+        "decoder_mlp_layer9",
+        "decoder_transformer_layer9",
+    ):
+        assert experiments[name]["ssl"]["layer"] == 9
+        assert experiments[name]["data"]["train_samples"] == 3600

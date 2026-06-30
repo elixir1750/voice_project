@@ -33,6 +33,7 @@
 | 单音频与批量推理 | ✅ 已完成 | 目录模式只加载一次模型，可保存 JSON |
 | 批量消融实验 | ✅ 已完成 | YAML 实验矩阵，默认 dry-run，显式确认后训练 |
 | 研究 C：SSL 表征层 | ✅ 已完成 | 第 9 层在当前设置下取得最低 WER/CER |
+| 研究 A：Decoder 结构 | ✅ 已配置 | 以第 9 层为锚点，对比 Linear、MLP、Transformer |
 | CUDA / MPS / CPU | ✅ 已完成 | `auto` 按 CUDA → MPS → CPU 选择 |
 | HuBERT / WavLM | ⏳ 第二阶段 | 尚未实现 |
 | k-means 离散单元 | ⏳ 第二阶段 | 尚未实现 |
@@ -249,6 +250,12 @@ python run.py train \
 ```
 
 断点中会同时保存并恢复模型、优化器、scheduler 和 Early Stopping 状态。
+每轮训练日志还会记录参数量：
+
+- `parameters.total`：完整 ASR 模型参数量，包括冻结的 SSL 模型；
+- `parameters.trainable`：实际参与训练的参数量；
+- `parameters.decoder`：Decoder 自身参数量；
+- `parameters.decoder_trainable`：Decoder 中实际参与训练的参数量。
 
 ### 7. 预览和运行实验矩阵
 
@@ -278,6 +285,25 @@ python run.py experiments \
 `configs/experiments.yaml` 当前包含 Linear、MLP、Transformer Decoder，
 hidden layer 和训练样本规模对比。离散单元尚未可靠实现，因此实验加载器会
 主动拒绝离散表示配置，避免生成名义上离散、实际上仍使用连续特征的无效结果。
+
+研究 A 建议使用研究 C 得到的第 9 层作为锚点，而不是最后一层：
+
+```bash
+python run.py experiments \
+  --matrix configs/experiments.yaml \
+  --name decoder_linear_layer9 \
+  --name decoder_mlp_layer9 \
+  --name decoder_transformer_layer9 \
+  --execute
+```
+
+这三组分别对应：
+
+| 实验 | Decoder | 作用 |
+| --- | --- | --- |
+| `decoder_linear_layer9` | Linear | 检查 SSL 表征是否接近线性可分 |
+| `decoder_mlp_layer9` | MLP | 衡量逐帧非线性带来的收益 |
+| `decoder_transformer_layer9` | Transformer | 衡量跨帧上下文建模带来的收益 |
 
 ## 配置说明
 
