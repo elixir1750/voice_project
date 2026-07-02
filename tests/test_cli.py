@@ -55,3 +55,27 @@ def test_parser_accepts_safe_experiments_dry_run() -> None:
     assert args.command == "experiments"
     assert args.execute is False
     assert args.names == []
+
+
+def test_parser_accepts_fit_kmeans_command() -> None:
+    args = build_parser().parse_args(
+        [
+            "fit-kmeans",
+            "--config",
+            "configs/baseline.yaml",
+            "--set",
+            "ssl.layer=9",
+            "--codebook-size",
+            "100",
+            "--codebook-size",
+            "500",
+            "--output-dir",
+            "artifacts/kmeans",
+            "--frame-sample-limit",
+            "300000",
+        ]
+    )
+
+    assert args.command == "fit-kmeans"
+    assert args.codebook_sizes == [100, 500]
+    assert args.frame_sample_limit == 300000

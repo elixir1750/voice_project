@@ -100,6 +100,33 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    kmeans_parser = subparsers.add_parser(
+        "fit-kmeans",
+        help="Fit k-means codebooks on training-split SSL hidden states",
+    )
+    kmeans_parser.add_argument("--config", required=True)
+    kmeans_parser.add_argument("--set", action="append", default=[])
+    kmeans_parser.add_argument(
+        "--codebook-size",
+        dest="codebook_sizes",
+        type=int,
+        action="append",
+        required=True,
+        help="Codebook size K; repeat for multiple codebooks",
+    )
+    kmeans_parser.add_argument(
+        "--output-dir",
+        default="artifacts/kmeans",
+        help="Directory for fitted .pkl codebooks",
+    )
+    kmeans_parser.add_argument(
+        "--frame-sample-limit",
+        type=int,
+        default=500_000,
+        help="Maximum number of training frames used per codebook",
+    )
+    kmeans_parser.add_argument("--device", default="auto")
+
     return parser
 
 
@@ -140,6 +167,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             dead_min_frequency=args.dead_min_frequency,
             downstream_metrics_path=args.downstream_metrics,
         )
+    elif args.command == "fit-kmeans":
+        from analysis.kmeans_codebook import fit_many_kmeans_codebooks
+
+        config = apply_overrides(load_config(args.config), args.set)
+        results = fit_many_kmeans_codebooks(
+            config=config,
+            codebook_sizes=args.codebook_sizes,
+            output_dir=args.output_dir,
+            frame_sample_limit=args.frame_sample_limit,
+            device=args.device,
+        )
+        import json
+
+        print(json.dumps(results, ensure_ascii=False, indent=2))
     else:
         raise RuntimeError(f"Unhandled command: {args.command}")
     return 0

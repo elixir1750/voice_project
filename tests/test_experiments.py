@@ -76,7 +76,7 @@ def test_experiment_matrix_rejects_duplicates(tmp_path: Path) -> None:
         load_experiment_matrix(matrix_path)
 
 
-def test_experiment_matrix_rejects_unimplemented_discrete_path(
+def test_experiment_matrix_rejects_unknown_representation_path(
     tmp_path: Path,
 ) -> None:
     base_path = tmp_path / "base.yaml"
@@ -89,7 +89,7 @@ def test_experiment_matrix_rejects_unimplemented_discrete_path(
                 "experiments": [
                     {
                         "name": "discrete",
-                        "overrides": {"representation.type": "kmeans"},
+                        "overrides": {"representation.type": "vq"},
                     }
                 ],
             }
@@ -97,7 +97,7 @@ def test_experiment_matrix_rejects_unimplemented_discrete_path(
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="continuous"):
+    with pytest.raises(ValueError, match="continuous or kmeans"):
         load_experiment_matrix(matrix_path)
 
 
@@ -160,3 +160,28 @@ def test_research_d_data_scale_experiments_use_layer_9_mlp() -> None:
         assert config["representation"]["type"] == "continuous"
         assert config["decoder"]["type"] == "mlp"
         assert config["data"]["train_samples"] == sample_count
+
+
+def test_research_b_kmeans_experiments_use_layer_9_mlp() -> None:
+    experiments = {
+        item["name"]: item["config"]
+        for item in load_experiment_matrix("configs/experiments.yaml")
+    }
+    expected = {
+        "kmeans_k100": (100, False),
+        "kmeans_k500": (500, False),
+        "kmeans_k1000": (1000, False),
+        "kmeans_k500_dedup": (500, True),
+    }
+
+    assert expected.keys() <= experiments.keys()
+    for name, (codebook_size, dedup) in expected.items():
+        config = experiments[name]
+        assert config["ssl"]["layer"] == 9
+        assert config["data"]["train_samples"] == 3600
+        assert config["training"]["epochs"] == 10
+        assert config["decoder"]["type"] == "mlp"
+        assert config["representation"]["type"] == "kmeans"
+        assert config["representation"]["codebook_size"] == codebook_size
+        assert config["representation"]["embedding_dim"] == 768
+        assert config["representation"].get("dedup", False) is dedup

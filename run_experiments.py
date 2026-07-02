@@ -56,10 +56,11 @@ def load_experiment_matrix(
         config["experiment"]["name"] = name
         if "runtime.output_dir" not in overrides:
             config["runtime"]["output_dir"] = str(base_output_dir.parent / name)
-        if str(config["representation"].get("type", "")).lower() != "continuous":
+        representation_type = str(config["representation"].get("type", "")).lower()
+        if representation_type not in {"continuous", "kmeans"}:
             raise ValueError(
                 f"Experiment {name} must use the implemented continuous "
-                "representation; discrete units are not ready"
+                "or kmeans representation"
             )
         experiments.append(
             {

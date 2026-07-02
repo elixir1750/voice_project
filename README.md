@@ -35,6 +35,7 @@
 | 研究 C：SSL 表征层 | ✅ 已完成 | 第 9 层在当前设置下取得最低 WER/CER |
 | 研究 A：Decoder 结构 | ✅ 已配置 | 以第 9 层为锚点，对比 Linear、MLP、Transformer |
 | 研究 D：训练数据规模 | ✅ 已配置 | 以第 9 层为锚点，对比 900 到 7200 条样本 |
+| 研究 B：连续 vs 离散 | ✅ 已配置 | k-means → embedding → MLP CTC 训练路径 |
 | 研究 B 附加分析 | ✅ 已配置 | 免标签统计离散单元的熵、perplexity 和死簇比例 |
 | CUDA / MPS / CPU | ✅ 已完成 | `auto` 按 CUDA → MPS → CPU 选择 |
 | HuBERT / WavLM | ⏳ 第二阶段 | 尚未实现 |
@@ -343,7 +344,81 @@ python run.py experiments \
 增加时 WER/CER 的下降幅度。若算力有限，优先补跑 900、1800、5400、7200；
 3600 可以直接使用研究 C 的第 9 层 MLP 结果。
 
-### 9. 研究 B 附加分析：码本利用率
+### 9. 研究 B：连续 vs 离散表示
+
+研究 B 固定第 9 层、3600 条训练样本和 MLP decoder，只改变表示方式：
+
+```text
+continuous hidden states
+vs.
+k-means cluster id → trainable embedding → MLP CTC decoder
+```
+
+离散路径分两步。
+
+第一步，只用训练 split 的第 9 层 hidden states 拟合 k-means codebook。不要使用 validation/test 特征，避免信息泄露。建议先用 30–50 万帧做 MiniBatchKMeans：
+
+```bash
+python run.py fit-kmeans \
+  --config configs/baseline.yaml \
+  --set ssl.layer=9 \
+  --codebook-size 100 \
+  --codebook-size 500 \
+  --codebook-size 1000 \
+  --frame-sample-limit 500000 \
+  --output-dir artifacts/kmeans
+```
+
+这会生成：
+
+```text
+artifacts/kmeans/
+├── wav2vec2_layer9_k100.pkl
+├── wav2vec2_layer9_k500.pkl
+└── wav2vec2_layer9_k1000.pkl
+```
+
+`artifacts/` 默认不提交 Git。
+
+第二步，运行离散 ASR 实验：
+
+```bash
+python run.py experiments \
+  --matrix configs/experiments.yaml \
+  --name kmeans_k100 \
+  --name kmeans_k500 \
+  --name kmeans_k1000 \
+  --execute
+```
+
+可选 dedup 实验：
+
+```bash
+python run.py experiments \
+  --matrix configs/experiments.yaml \
+  --name kmeans_k500_dedup \
+  --execute
+```
+
+当前 B 组配置：
+
+| 实验 | 表示 | K | dedup | 说明 |
+| --- | --- | ---: | --- | --- |
+| `decoder_mlp_layer9` | continuous | - | - | B0 连续基线，可复用研究 A/C |
+| `kmeans_k100` | k-means | 100 | 否 | B1 |
+| `kmeans_k500` | k-means | 500 | 否 | B2 |
+| `kmeans_k1000` | k-means | 1000 | 否 | B3 |
+| `kmeans_k500_dedup` | k-means | 500 | 是 | 选做加分 |
+
+验证输出会额外记录：
+
+- `token_rate`
+- `bitrate`
+- `codebook_size`
+
+当前 B 组离散实验在 `configs/experiments.yaml` 中显式固定为 10 epoch，便于和现有连续基线对齐。完整运行说明见 `RESEARCH_B_RUNBOOK.md`。如果后续 K=500 的收敛探针显示 10 epoch 不够，应统一提高 B 组所有系统的训练预算，并同步重跑连续基线 B0。
+
+### 10. 研究 B 附加分析：码本利用率
 
 phone purity 需要帧级音素标签，LibriSpeech 默认没有这类标注；若不引入
 Montreal Forced Aligner 等强制对齐工具，推荐先做免标签的码本利用率分析。

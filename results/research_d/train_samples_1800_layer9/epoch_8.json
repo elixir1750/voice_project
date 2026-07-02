@@ -1,0 +1,28 @@
+{
+  "epoch": 8,
+  "device": "cuda",
+  "parameters": {
+    "total": 94782366,
+    "trainable": 410654,
+    "decoder": 410654,
+    "decoder_trainable": 410654
+  },
+  "train": {
+    "loss": 0.14102555414040882,
+    "batches": 225,
+    "optimizer_steps": 225
+  },
+  "learning_rate": 0.00010453658778440107,
+  "validation": {
+    "loss": 0.35443800191084546,
+    "wer": 0.34900105152471084,
+    "cer": 0.09224657643629976,
+    "substitutions": 2902,
+    "deletions": 299,
+    "insertions": 118,
+    "hits": 6309,
+    "reference_words": 9510,
+    "rtf": 0.010163132355487188,
+    "num_samples": 500
+  }
+}

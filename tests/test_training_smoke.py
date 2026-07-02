@@ -19,9 +19,14 @@ from utils.tokenizer import CharacterCTCTokenizer
 
 
 class _TinyASRModel(nn.Module):
-    def __init__(self, vocab_size: int) -> None:
+    def __init__(
+        self,
+        vocab_size: int,
+        metadata: dict | None = None,
+    ) -> None:
         super().__init__()
         self.projection = nn.Linear(1, vocab_size)
+        self.metadata = dict(metadata or {})
 
     def forward(
         self,
@@ -36,7 +41,11 @@ class _TinyASRModel(nn.Module):
             dtype=torch.long,
             device=waveforms.device,
         )
-        return DecoderOutput(logits=self.projection(frames), lengths=lengths)
+        return DecoderOutput(
+            logits=self.projection(frames),
+            lengths=lengths,
+            metadata=self.metadata,
+        )
 
 
 def _batch(tokenizer: CharacterCTCTokenizer) -> dict:
@@ -122,6 +131,26 @@ def test_fake_validation_returns_metrics_and_hypotheses() -> None:
     assert math.isfinite(result["rtf"])
     assert result["num_samples"] == 2
     assert len(result["hypotheses"]) == 2
+    assert math.isfinite(result["token_rate"])
+
+
+def test_validation_reports_discrete_bitrate() -> None:
+    tokenizer = CharacterCTCTokenizer()
+    model = _TinyASRModel(
+        len(tokenizer),
+        metadata={"codebook_size": 4, "feature_dim": 3},
+    )
+
+    result = validate(
+        model=model,
+        dataloader=[_batch(tokenizer)],
+        tokenizer=tokenizer,
+        device=torch.device("cpu"),
+    )
+
+    assert result["codebook_size"] == 4
+    assert result["token_rate"] == 8.0
+    assert result["bitrate"] == 16.0
 
 
 def test_ctc_loss_falls_back_to_cpu_for_mps() -> None:

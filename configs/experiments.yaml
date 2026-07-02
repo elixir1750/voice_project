@@ -55,6 +55,51 @@ experiments:
     overrides:
       ssl.layer: 9
 
+  # 研究 B：连续 vs 离散表示。先用 fit-kmeans 生成对应 codebook。
+  - name: kmeans_k100
+    overrides:
+      ssl.layer: 9
+      training.epochs: 10
+      representation:
+        type: kmeans
+        codebook_path: artifacts/kmeans/wav2vec2_layer9_k100.pkl
+        codebook_size: 100
+        embedding_dim: 768
+        dedup: false
+
+  - name: kmeans_k500
+    overrides:
+      ssl.layer: 9
+      training.epochs: 10
+      representation:
+        type: kmeans
+        codebook_path: artifacts/kmeans/wav2vec2_layer9_k500.pkl
+        codebook_size: 500
+        embedding_dim: 768
+        dedup: false
+
+  - name: kmeans_k1000
+    overrides:
+      ssl.layer: 9
+      training.epochs: 10
+      representation:
+        type: kmeans
+        codebook_path: artifacts/kmeans/wav2vec2_layer9_k1000.pkl
+        codebook_size: 1000
+        embedding_dim: 768
+        dedup: false
+
+  - name: kmeans_k500_dedup
+    overrides:
+      ssl.layer: 9
+      training.epochs: 10
+      representation:
+        type: kmeans
+        codebook_path: artifacts/kmeans/wav2vec2_layer9_k500.pkl
+        codebook_size: 500
+        embedding_dim: 768
+        dedup: true
+
   # 研究 D：训练数据规模。使用研究 C 找到的第 9 层和 MLP decoder。
   - name: train_samples_900_layer9
     overrides:

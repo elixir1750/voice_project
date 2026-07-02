@@ -41,7 +41,16 @@ class ASRModel(nn.Module):
     ) -> DecoderOutput:
         speech = self.ssl(waveforms, waveform_lengths)
         represented = self.representation(speech)
-        return self.decoder(represented.values, represented.lengths)
+        output = self.decoder(represented.values, represented.lengths)
+        return DecoderOutput(
+            logits=output.logits,
+            lengths=output.lengths,
+            metadata={
+                **output.metadata,
+                **represented.metadata,
+                "feature_dim": represented.feature_dim,
+            },
+        )
 
 
 def set_seed(seed: int) -> None:
@@ -254,8 +263,10 @@ def validate(
     batches = 0
     total_audio_seconds = 0.0
     total_inference_seconds = 0.0
+    total_output_tokens = 0
     references: list[str] = []
     hypotheses: list[str] = []
+    last_metadata: dict[str, Any] = {}
 
     for batch in tqdm(dataloader, desc="validate", leave=False):
         waveforms, waveform_lengths, targets, target_lengths = _move_batch(
@@ -267,6 +278,8 @@ def validate(
         output = model(waveforms, waveform_lengths)
         _synchronize(device)
         total_inference_seconds += time.perf_counter() - started_at
+        last_metadata = dict(output.metadata)
+        total_output_tokens += int(output.lengths.detach().cpu().sum().item())
 
         loss = _ctc_loss(output, targets, target_lengths, tokenizer.blank_id)
         predicted_ids = output.logits.argmax(dim=-1).detach().cpu()
@@ -280,10 +293,19 @@ def validate(
     if batches == 0 or not references:
         raise RuntimeError("Validation dataloader produced no samples")
     rates = compute_error_rates(references, hypotheses)
+    token_rate = total_output_tokens / total_audio_seconds
+    codebook_size = last_metadata.get("codebook_size")
+    if codebook_size is not None:
+        bitrate = token_rate * math.log2(int(codebook_size))
+    else:
+        bitrate = token_rate * int(last_metadata.get("feature_dim", 1)) * 32
     return {
         "loss": total_loss / batches,
         **rates,
         "rtf": compute_rtf(total_audio_seconds, total_inference_seconds),
+        "token_rate": token_rate,
+        "bitrate": bitrate,
+        "codebook_size": codebook_size,
         "num_samples": len(references),
         "references": references,
         "hypotheses": hypotheses,
