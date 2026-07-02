@@ -34,6 +34,7 @@
 | 批量消融实验 | ✅ 已完成 | YAML 实验矩阵，默认 dry-run，显式确认后训练 |
 | 研究 C：SSL 表征层 | ✅ 已完成 | 第 9 层在当前设置下取得最低 WER/CER |
 | 研究 A：Decoder 结构 | ✅ 已配置 | 以第 9 层为锚点，对比 Linear、MLP、Transformer |
+| 研究 D：训练数据规模 | ✅ 已配置 | 以第 9 层为锚点，对比 900 到 7200 条样本 |
 | 研究 B 附加分析 | ✅ 已配置 | 免标签统计离散单元的熵、perplexity 和死簇比例 |
 | CUDA / MPS / CPU | ✅ 已完成 | `auto` 按 CUDA → MPS → CPU 选择 |
 | HuBERT / WavLM | ⏳ 第二阶段 | 尚未实现 |
@@ -312,7 +313,37 @@ python run.py experiments \
 因此只保留 `config.yaml` 和每轮 `epoch_*.json`，不会生成较大的 `.pt`
 checkpoint。报告所需的 WER、CER、RTF 和参数量都在 JSON 中。
 
-### 8. 研究 B 附加分析：码本利用率
+### 8. 研究 D：训练数据规模
+
+研究 D 固定研究 C 找到的第 9 层、连续表征和 MLP decoder，只改变训练样本数。
+当前配置包含 900、1800、3600、5400 和 7200 五个点：
+
+```bash
+python run.py experiments \
+  --matrix configs/experiments.yaml \
+  --name train_samples_900_layer9 \
+  --name train_samples_1800_layer9 \
+  --name train_samples_3600_layer9 \
+  --name train_samples_5400_layer9 \
+  --name train_samples_7200_layer9 \
+  --execute
+```
+
+对应关系：
+
+| 实验 | 训练样本数 | 说明 |
+| --- | ---: | --- |
+| `train_samples_900_layer9` | 900 | 新增低资源点 |
+| `train_samples_1800_layer9` | 1800 | 原计划 D1 的 layer9 版本 |
+| `train_samples_3600_layer9` | 3600 | D0；可复用 `hidden_layer_9` / `decoder_mlp_layer9` 结果 |
+| `train_samples_5400_layer9` | 5400 | 新增中间点 |
+| `train_samples_7200_layer9` | 7200 | 原计划 D2 的 layer9 版本 |
+
+报告中建议画 WER–训练样本数曲线，并分析数据从 900→1800→3600→5400→7200
+增加时 WER/CER 的下降幅度。若算力有限，优先补跑 900、1800、5400、7200；
+3600 可以直接使用研究 C 的第 9 层 MLP 结果。
+
+### 9. 研究 B 附加分析：码本利用率
 
 phone purity 需要帧级音素标签，LibriSpeech 默认没有这类标注；若不引入
 Montreal Forced Aligner 等强制对齐工具，推荐先做免标签的码本利用率分析。

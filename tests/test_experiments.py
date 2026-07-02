@@ -138,3 +138,25 @@ def test_research_a_decoder_experiments_are_anchored_to_layer_9() -> None:
         assert experiments[name]["ssl"]["layer"] == 9
         assert experiments[name]["data"]["train_samples"] == 3600
         assert experiments[name]["training"]["save_checkpoints"] is False
+
+
+def test_research_d_data_scale_experiments_use_layer_9_mlp() -> None:
+    experiments = {
+        item["name"]: item["config"]
+        for item in load_experiment_matrix("configs/experiments.yaml")
+    }
+    expected_samples = {
+        "train_samples_900_layer9": 900,
+        "train_samples_1800_layer9": 1800,
+        "train_samples_3600_layer9": 3600,
+        "train_samples_5400_layer9": 5400,
+        "train_samples_7200_layer9": 7200,
+    }
+
+    assert expected_samples.keys() <= experiments.keys()
+    for name, sample_count in expected_samples.items():
+        config = experiments[name]
+        assert config["ssl"]["layer"] == 9
+        assert config["representation"]["type"] == "continuous"
+        assert config["decoder"]["type"] == "mlp"
+        assert config["data"]["train_samples"] == sample_count

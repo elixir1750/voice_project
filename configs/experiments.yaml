@@ -55,6 +55,32 @@ experiments:
     overrides:
       ssl.layer: 9
 
+  # 研究 D：训练数据规模。使用研究 C 找到的第 9 层和 MLP decoder。
+  - name: train_samples_900_layer9
+    overrides:
+      ssl.layer: 9
+      data.train_samples: 900
+
+  - name: train_samples_1800_layer9
+    overrides:
+      ssl.layer: 9
+      data.train_samples: 1800
+
+  - name: train_samples_3600_layer9
+    overrides:
+      ssl.layer: 9
+      data.train_samples: 3600
+
+  - name: train_samples_5400_layer9
+    overrides:
+      ssl.layer: 9
+      data.train_samples: 5400
+
+  - name: train_samples_7200_layer9
+    overrides:
+      ssl.layer: 9
+      data.train_samples: 7200
+
   - name: train_samples_1800
     overrides:
       data.train_samples: 1800
