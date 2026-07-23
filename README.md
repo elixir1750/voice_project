@@ -33,13 +33,12 @@
 | 单音频与批量推理 | ✅ 已完成 | 目录模式只加载一次模型，可保存 JSON |
 | 批量消融实验 | ✅ 已完成 | YAML 实验矩阵，默认 dry-run，显式确认后训练 |
 | 研究 C：SSL 表征层 | ✅ 已完成 | 第 9 层在当前设置下取得最低 WER/CER |
-| 研究 A：Decoder 结构 | ✅ 已配置 | 以第 9 层为锚点，对比 Linear、MLP、Transformer |
-| 研究 D：训练数据规模 | ✅ 已配置 | 以第 9 层为锚点，对比 900 到 7200 条样本 |
-| 研究 B：连续 vs 离散 | ✅ 已配置 | k-means → embedding → MLP CTC 训练路径 |
-| 研究 B 附加分析 | ✅ 已配置 | 免标签统计离散单元的熵、perplexity 和死簇比例 |
+| 研究 A：Decoder 结构 | ✅ 已完成 | 已整理 Linear、MLP、Transformer 对比结果 |
+| 研究 D：训练数据规模 | ✅ 已完成 | 已整理 900、1800、3600、5400、7200 样本结果 |
+| 研究 B：连续 vs 离散 | ✅ 已完成 | 已整理连续基线、K=100/500/1000 和 K=500 dedup 结果 |
 | CUDA / MPS / CPU | ✅ 已完成 | `auto` 按 CUDA → MPS → CPU 选择 |
 | HuBERT / WavLM | ⏳ 第二阶段 | 尚未实现 |
-| k-means 离散单元 | ⏳ 第二阶段 | 尚未实现 |
+| k-means 离散单元 | ✅ 已完成 | 支持离线拟合 codebook、离散 embedding、dedup 和 bitrate/token-rate 指标 |
 
 ## 已验证的真实 quick test
 
@@ -65,7 +64,7 @@
 
 训练、独立评估、checkpoint 恢复和真实单音频推理均已成功执行并正常退出。
 
-上述 quick test 只用于验证工程链路。训练数据极少且仅训练 1 epoch，模型在测试音频上的 greedy CTC 输出为空字符串，WER/CER 为 100%；这些数值不能作为正式实验性能。正式报告需要增加训练数据和 epoch，并完成对比与消融。
+上述 quick test 只用于验证工程链路。训练数据极少且仅训练 1 epoch，模型在测试音频上的 greedy CTC 输出为空字符串，WER/CER 为 100%；这些数值不能作为正式实验性能。正式实验使用更多训练样本和最多 10 epoch，结果见下方研究 A/B/C/D；其中第 9 层连续表征配合 MLP Decoder 的 WER 为 0.2954。
 
 ## 目录结构
 
@@ -80,7 +79,8 @@ voice_project/
 ├── environment.yml        # Conda 环境
 ├── requirements.txt       # Colab / pip 依赖
 ├── analysis/
-│   └── cluster_usage.py   # 离散单元码本利用率分析
+│   ├── cluster_usage.py   # 离散单元码本利用率分析
+│   └── kmeans_codebook.py # 在训练集 SSL 特征上拟合离散码本
 ├── configs/
 │   ├── quick_test.yaml    # 真实小样本闭环
 │   ├── baseline.yaml      # 低资源基线配置
@@ -91,8 +91,8 @@ voice_project/
 │   ├── interfaces.py      # 统一组件接口
 │   ├── registry.py        # 组件注册表与工厂函数
 │   ├── ssl_extractor.py   # wav2vec2 SSL 提取器
-│   ├── representations.py # 连续表示适配器
-│   └── ctc_decoder.py     # Linear / MLP CTC Decoder
+│   ├── representations.py # Continuous / k-means 表示适配器
+│   └── ctc_decoder.py     # Linear / MLP / Transformer CTC Decoder
 ├── utils/
 │   ├── tokenizer.py       # 字符级 CTC Tokenizer
 │   ├── device.py          # CUDA / MPS / CPU 选择
@@ -126,6 +126,247 @@ voice_project/
 - `results/research_c/epoch_metrics.csv`
 - `results/research_c/wer_by_layer.png`
 - `results/research_c/wer_by_epoch.png`
+
+## 实验复现总览
+
+所有正式实验都通过 `run.py experiments` 读取 `configs/experiments.yaml`。默认只预览配置；只有显式加入 `--execute` 才会真正训练。
+
+建议复现顺序：
+
+```text
+研究 C：先确定最佳 SSL 表征层
+  → 研究 A：固定第 9 层，比较 Decoder
+  → 研究 D：固定第 9 层和 MLP，比较训练样本数
+  → 研究 B：固定第 9 层和 MLP，比较连续/离散表示
+```
+
+当前报告中的锚点是 wav2vec2 第 9 层。除非特别说明，正式实验使用：
+
+- 训练 split：LibriSpeech `train.100`
+- 验证 split：LibriSpeech `validation`
+- 验证样本数：500
+- SSL 模型：`facebook/wav2vec2-base`
+- SSL 参数：冻结
+- tokenizer：字符级 CTC
+- 训练上限：10 epoch
+- early stopping：验证 WER 连续 3 轮未刷新最佳值则提前停止
+
+因此，某些实验只跑到第 4/5 轮是正常现象；`10 epoch` 表示最多训练 10 轮，不保证一定跑满。
+
+### Colab 基础准备
+
+Colab 推荐选择 T4 GPU，不要选 TPU。
+
+```python
+%cd /content
+![ -d voice_project/.git ] || git clone https://github.com/elixir1750/voice_project.git
+%cd /content/voice_project
+!git pull
+```
+
+Colab 通常已经自带 CUDA 版 `torch` / `torchaudio`，因此建议只安装项目额外依赖：
+
+```python
+!apt-get -qq update
+!apt-get -qq install -y ffmpeg libsndfile1
+!grep -v -E '^(torch|torchaudio)' requirements.txt > /tmp/voice_project_colab_requirements.txt
+!pip install -q -r /tmp/voice_project_colab_requirements.txt
+```
+
+检查 GPU：
+
+```python
+!python - <<'PY'
+import torch
+print("cuda:", torch.cuda.is_available())
+print("device:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu")
+PY
+```
+
+如需在 Colab 中保留实验输出，可挂载 Google Drive：
+
+```python
+from google.colab import drive
+drive.mount("/content/drive")
+!mkdir -p /content/drive/MyDrive/voice_project_outputs
+```
+
+### 研究 C：SSL 表征层
+
+目的：固定连续表征和 MLP decoder，只改变 wav2vec2 hidden layer，回答“哪一层对 ASR 最有用”。
+
+```bash
+python run.py experiments \
+  --matrix configs/experiments.yaml \
+  --name hidden_layer_6 \
+  --name hidden_layer_9 \
+  --name baseline_mlp \
+  --execute
+```
+
+对应关系：
+
+| 实验 | 层号 | 说明 |
+| --- | ---: | --- |
+| `hidden_layer_6` | 6 | 中层偏声学/音素信息 |
+| `hidden_layer_9` | 9 | 当前实验中效果最好，后续作为锚点 |
+| `baseline_mlp` | 12 | 最后一层，作为原始 baseline |
+
+结果整理位置：
+
+```text
+results/research_c/
+├── summary.csv
+├── epoch_metrics.csv
+├── wer_by_layer.png
+└── wer_by_epoch.png
+```
+
+### 研究 A：Decoder 结构
+
+目的：固定第 9 层连续表征和 3600 条训练样本，只改变 decoder，回答“非线性和跨帧建模是否有帮助”。
+
+```bash
+python run.py experiments \
+  --matrix configs/experiments.yaml \
+  --name decoder_linear_layer9 \
+  --name decoder_mlp_layer9 \
+  --name decoder_transformer_layer9 \
+  --execute
+```
+
+对应关系：
+
+| 实验 | Decoder | 作用 |
+| --- | --- | --- |
+| `decoder_linear_layer9` | Linear | 检查 SSL 表征是否线性可分 |
+| `decoder_mlp_layer9` | MLP | 衡量逐帧非线性的收益 |
+| `decoder_transformer_layer9` | Transformer | 衡量额外跨帧上下文建模的收益 |
+
+研究 A 的 layer9 实验默认关闭 checkpoint 保存，只保留 `config.yaml` 和每轮 `epoch_*.json`，避免 Colab / Drive 被 `.pt` 文件占满。
+
+结果整理位置：
+
+```text
+results/research_a/
+├── summary.csv
+├── epoch_metrics.csv
+└── wer_cer_by_decoder.svg
+```
+
+### 研究 D：训练数据规模
+
+目的：固定第 9 层连续表征和 MLP decoder，只改变训练样本数，回答“低资源条件下数据量增加能带来多少收益”。
+
+```bash
+python run.py experiments \
+  --matrix configs/experiments.yaml \
+  --name train_samples_900_layer9 \
+  --name train_samples_1800_layer9 \
+  --name train_samples_3600_layer9 \
+  --name train_samples_5400_layer9 \
+  --name train_samples_7200_layer9 \
+  --execute
+```
+
+也可以单独复现某个数据点，例如 900 样本设置：
+
+```python
+!python run.py experiments --matrix configs/experiments.yaml --name train_samples_900_layer9 --execute
+```
+
+结果整理位置：
+
+```text
+results/research_d/
+├── summary.csv
+├── epoch_metrics.csv
+└── wer_cer_by_train_samples.svg
+```
+
+### 研究 B：连续 vs 离散表示
+
+目的：固定第 9 层、3600 条训练样本和 MLP decoder，比较连续 hidden states 与 k-means 离散单元。
+
+离散路径分两步：先拟合 k-means codebook，再训练离散 ASR。
+
+第一步，只使用训练集特征拟合 codebook，不能使用 validation/test：
+
+```bash
+python run.py fit-kmeans \
+  --config configs/baseline.yaml \
+  --set ssl.layer=9 \
+  --codebook-size 100 \
+  --codebook-size 500 \
+  --codebook-size 1000 \
+  --frame-sample-limit 500000 \
+  --output-dir artifacts/kmeans
+```
+
+成功后应得到：
+
+```text
+artifacts/kmeans/
+├── wav2vec2_layer9_k100.pkl
+├── wav2vec2_layer9_k500.pkl
+└── wav2vec2_layer9_k1000.pkl
+```
+
+若已保存 k-means codebook artifact，可直接解压并复制到 `artifacts/kmeans/`，跳过 `fit-kmeans`：
+
+```python
+!unzip -o /content/drive/MyDrive/voice_project_outputs-20260702T103336Z-3-001.zip -d /content
+!mkdir -p artifacts
+!cp -r /content/voice_project_outputs/artifacts/kmeans artifacts/
+!find artifacts/kmeans -maxdepth 1 -type f | sort
+```
+
+第二步，运行离散 ASR：
+
+```bash
+python run.py experiments \
+  --matrix configs/experiments.yaml \
+  --name kmeans_k100 \
+  --name kmeans_k500 \
+  --name kmeans_k1000 \
+  --execute
+```
+
+可选 dedup：
+
+```bash
+python run.py experiments \
+  --matrix configs/experiments.yaml \
+  --name kmeans_k500_dedup \
+  --execute
+```
+
+如需分步复现，可按以下优先级分别运行：
+
+```text
+1. kmeans_k500
+2. kmeans_k100
+3. kmeans_k1000
+4. kmeans_k500_dedup
+```
+
+单个实验复现示例：
+
+```python
+!python run.py experiments --matrix configs/experiments.yaml --name kmeans_k500 --execute
+```
+
+结果整理位置：
+
+```text
+results/research_b/
+├── summary.csv
+├── epoch_metrics.csv
+├── wer_by_representation.svg
+└── bitrate_wer_tradeoff.svg
+```
+
+更完整的 Colab 版逐 cell 说明见 `RESEARCH_B_RUNBOOK.md`。
 
 ## 环境安装
 
@@ -264,7 +505,7 @@ python run.py train \
 
 ### 7. 预览和运行实验矩阵
 
-先预览，不会下载模型、读取数据或开始训练：
+正式实验复现命令见前文“实验复现总览”。这里保留通用的矩阵预览方法：
 
 ```bash
 python run.py experiments --matrix configs/experiments.yaml
@@ -275,214 +516,19 @@ python run.py experiments --matrix configs/experiments.yaml
 ```bash
 python run.py experiments \
   --matrix configs/experiments.yaml \
-  --name decoder_transformer
+  --name decoder_transformer_layer9
 ```
 
-确认配置和输出目录无误后，显式加入 `--execute`：
+确认配置和输出目录无误后，加入 `--execute` 才会真正训练：
 
 ```bash
 python run.py experiments \
   --matrix configs/experiments.yaml \
-  --name decoder_transformer \
-  --execute
-```
-
-`configs/experiments.yaml` 当前包含 Linear、MLP、Transformer Decoder，
-hidden layer 和训练样本规模对比。离散单元尚未可靠实现，因此实验加载器会
-主动拒绝离散表示配置，避免生成名义上离散、实际上仍使用连续特征的无效结果。
-
-研究 A 建议使用研究 C 得到的第 9 层作为锚点，而不是最后一层：
-
-```bash
-python run.py experiments \
-  --matrix configs/experiments.yaml \
-  --name decoder_linear_layer9 \
-  --name decoder_mlp_layer9 \
   --name decoder_transformer_layer9 \
   --execute
 ```
 
-这三组分别对应：
-
-| 实验 | Decoder | 作用 |
-| --- | --- | --- |
-| `decoder_linear_layer9` | Linear | 检查 SSL 表征是否接近线性可分 |
-| `decoder_mlp_layer9` | MLP | 衡量逐帧非线性带来的收益 |
-| `decoder_transformer_layer9` | Transformer | 衡量跨帧上下文建模带来的收益 |
-
-研究 A 的 layer9 实验默认设置了 `training.save_checkpoints: false`，
-因此只保留 `config.yaml` 和每轮 `epoch_*.json`，不会生成较大的 `.pt`
-checkpoint。报告所需的 WER、CER、RTF 和参数量都在 JSON 中。
-
-### 8. 研究 D：训练数据规模
-
-研究 D 固定研究 C 找到的第 9 层、连续表征和 MLP decoder，只改变训练样本数。
-当前配置包含 900、1800、3600、5400 和 7200 五个点：
-
-```bash
-python run.py experiments \
-  --matrix configs/experiments.yaml \
-  --name train_samples_900_layer9 \
-  --name train_samples_1800_layer9 \
-  --name train_samples_3600_layer9 \
-  --name train_samples_5400_layer9 \
-  --name train_samples_7200_layer9 \
-  --execute
-```
-
-对应关系：
-
-| 实验 | 训练样本数 | 说明 |
-| --- | ---: | --- |
-| `train_samples_900_layer9` | 900 | 新增低资源点 |
-| `train_samples_1800_layer9` | 1800 | 原计划 D1 的 layer9 版本 |
-| `train_samples_3600_layer9` | 3600 | D0；可复用 `hidden_layer_9` / `decoder_mlp_layer9` 结果 |
-| `train_samples_5400_layer9` | 5400 | 新增中间点 |
-| `train_samples_7200_layer9` | 7200 | 原计划 D2 的 layer9 版本 |
-
-报告中建议画 WER–训练样本数曲线，并分析数据从 900→1800→3600→5400→7200
-增加时 WER/CER 的下降幅度。若算力有限，优先补跑 900、1800、5400、7200；
-3600 可以直接使用研究 C 的第 9 层 MLP 结果。
-
-### 9. 研究 B：连续 vs 离散表示
-
-研究 B 固定第 9 层、3600 条训练样本和 MLP decoder，只改变表示方式：
-
-```text
-continuous hidden states
-vs.
-k-means cluster id → trainable embedding → MLP CTC decoder
-```
-
-离散路径分两步。
-
-第一步，只用训练 split 的第 9 层 hidden states 拟合 k-means codebook。不要使用 validation/test 特征，避免信息泄露。建议先用 30–50 万帧做 MiniBatchKMeans：
-
-```bash
-python run.py fit-kmeans \
-  --config configs/baseline.yaml \
-  --set ssl.layer=9 \
-  --codebook-size 100 \
-  --codebook-size 500 \
-  --codebook-size 1000 \
-  --frame-sample-limit 500000 \
-  --output-dir artifacts/kmeans
-```
-
-这会生成：
-
-```text
-artifacts/kmeans/
-├── wav2vec2_layer9_k100.pkl
-├── wav2vec2_layer9_k500.pkl
-└── wav2vec2_layer9_k1000.pkl
-```
-
-`artifacts/` 默认不提交 Git。
-
-第二步，运行离散 ASR 实验：
-
-```bash
-python run.py experiments \
-  --matrix configs/experiments.yaml \
-  --name kmeans_k100 \
-  --name kmeans_k500 \
-  --name kmeans_k1000 \
-  --execute
-```
-
-可选 dedup 实验：
-
-```bash
-python run.py experiments \
-  --matrix configs/experiments.yaml \
-  --name kmeans_k500_dedup \
-  --execute
-```
-
-当前 B 组配置：
-
-| 实验 | 表示 | K | dedup | 说明 |
-| --- | --- | ---: | --- | --- |
-| `decoder_mlp_layer9` | continuous | - | - | B0 连续基线，可复用研究 A/C |
-| `kmeans_k100` | k-means | 100 | 否 | B1 |
-| `kmeans_k500` | k-means | 500 | 否 | B2 |
-| `kmeans_k1000` | k-means | 1000 | 否 | B3 |
-| `kmeans_k500_dedup` | k-means | 500 | 是 | 选做加分 |
-
-验证输出会额外记录：
-
-- `token_rate`
-- `bitrate`
-- `codebook_size`
-
-当前 B 组离散实验在 `configs/experiments.yaml` 中显式固定为 10 epoch，便于和现有连续基线对齐。完整运行说明见 `RESEARCH_B_RUNBOOK.md`。如果后续 K=500 的收敛探针显示 10 epoch 不够，应统一提高 B 组所有系统的训练预算，并同步重跑连续基线 B0。
-
-### 10. 研究 B 附加分析：码本利用率
-
-phone purity 需要帧级音素标签，LibriSpeech 默认没有这类标注；若不引入
-Montreal Forced Aligner 等强制对齐工具，推荐先做免标签的码本利用率分析。
-
-给定 k-means 产生的离散 token 序列，可以统计：
-
-- entropy bits：簇使用分布熵；
-- normalized entropy：除以 `log2(K)` 后的归一化熵；
-- perplexity：等效活跃簇数；
-- dead cluster ratio：死簇比例；
-- most used frequency：最高频簇占比。
-
-输入文件可以是 `.txt`、`.csv`、`.json`、`.npy` 或 `.npz`。文本文件中 token
-可用空格、换行或逗号分隔；JSON 可以是嵌套 list。
-
-```bash
-python run.py cluster-usage \
-  --assignments outputs/units_k128.txt outputs/units_k256.txt outputs/units_k512.txt \
-  --codebook-size 128 \
-  --codebook-size 256 \
-  --codebook-size 512 \
-  --output-dir results/research_b_cluster_usage
-```
-
-输出包括：
-
-```text
-results/research_b_cluster_usage/
-├── cluster_usage_summary.json
-├── cluster_usage_summary.csv
-└── cluster_usage_by_k.svg
-```
-
-如果后续有离散 ASR 的下游结果，可以准备一个 CSV：
-
-```csv
-codebook_size,wer,cer
-128,0.52,0.18
-256,0.49,0.16
-512,0.50,0.17
-```
-
-然后通过 `--downstream-metrics` 合并，便于分析“码本利用率”和 WER 是否一致：
-
-```bash
-python run.py cluster-usage \
-  --assignments outputs/units_k128.txt outputs/units_k256.txt outputs/units_k512.txt \
-  --codebook-size 128 \
-  --codebook-size 256 \
-  --codebook-size 512 \
-  --downstream-metrics results/discrete_wer.csv \
-  --output-dir results/research_b_cluster_usage
-```
-
-若希望把“几乎不用”的低频簇也视为死簇，可设置阈值。例如使用频率低于
-0.1% 的簇都算死簇：
-
-```bash
-python run.py cluster-usage \
-  --assignments outputs/units_k512.txt \
-  --codebook-size 512 \
-  --dead-min-frequency 0.001 \
-  --output-dir results/research_b_cluster_usage_k512
-```
+训练输出默认写入 `outputs/<实验名>/`；用于作业报告的轻量结果已整理到 `results/`。
 
 ## 配置说明
 
@@ -494,7 +540,7 @@ YAML 配置分为：
 | `data` | 数据集、split、样本数和采样率 |
 | `tokenizer` | 字符级 CTC 词表 |
 | `ssl` | SSL 类型、模型 ID、冻结策略和层 |
-| `representation` | 连续或后续离散表示 |
+| `representation` | 连续表示或 k-means 离散表示 |
 | `decoder` | Decoder 类型与参数 |
 | `training` | epoch、batch、学习率和 DataLoader |
 | `runtime` | 设备、输出目录和缓存目录 |
@@ -525,7 +571,7 @@ YAML 配置分为：
 2. 输入和输出统一使用 `SpeechFeatures`；
 3. 使用 `@register_representation("名称")` 注册。
 
-后续 k-means 离散单元会放在这一层，不侵入 SSL 或训练循环。
+k-means 离散单元也放在这一层，不侵入 SSL 或训练循环。
 
 ### 新增 Decoder
 
@@ -558,9 +604,9 @@ decoder:
 | RTF | 推理耗时 / 音频时长 |
 | Substitutions / Deletions / Insertions | WER 的替换、删除和插入错误数量 |
 | Hits | 正确识别的词数量 |
-| Token Rate | 离散单元模式下每秒 token 数，第二阶段 |
-| Bitrate | 离散表示信息率，第二阶段 |
-| Codebook Size | 离散单元词表大小，第二阶段 |
+| Token Rate | 每秒 token 数；连续表示按 SSL 帧率估算，离散表示按离散 token 序列统计 |
+| Bitrate | 表示的信息率；用于连续/离散表示压缩效率对比 |
+| Codebook Size | k-means 离散单元词表大小 |
 
 ## 测试
 
