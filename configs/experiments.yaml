@@ -1,0 +1,135 @@
+base_config: baseline.yaml
+
+# 默认仅预览。只有 run.py experiments ... --execute 才会开始训练。
+experiments:
+  - name: baseline_mlp
+    overrides: {}
+
+  - name: decoder_linear
+    overrides:
+      decoder:
+        type: linear
+        dropout: 0.1
+
+  - name: decoder_transformer
+    overrides:
+      decoder:
+        type: transformer
+        model_dim: 256
+        num_heads: 4
+        num_layers: 2
+        feedforward_dim: 1024
+        dropout: 0.1
+
+  # 研究 A：Decoder 结构。使用研究 C 找到的第 9 层作为锚点。
+  - name: decoder_linear_layer9
+    overrides:
+      ssl.layer: 9
+      training.save_checkpoints: false
+      decoder:
+        type: linear
+        dropout: 0.1
+
+  - name: decoder_mlp_layer9
+    overrides:
+      ssl.layer: 9
+      training.save_checkpoints: false
+
+  - name: decoder_transformer_layer9
+    overrides:
+      ssl.layer: 9
+      training.save_checkpoints: false
+      decoder:
+        type: transformer
+        model_dim: 256
+        num_heads: 4
+        num_layers: 2
+        feedforward_dim: 1024
+        dropout: 0.1
+
+  - name: hidden_layer_6
+    overrides:
+      ssl.layer: 6
+
+  - name: hidden_layer_9
+    overrides:
+      ssl.layer: 9
+
+  # 研究 B：连续 vs 离散表示。先用 fit-kmeans 生成对应 codebook。
+  - name: kmeans_k100
+    overrides:
+      ssl.layer: 9
+      training.epochs: 10
+      representation:
+        type: kmeans
+        codebook_path: artifacts/kmeans/wav2vec2_layer9_k100.pkl
+        codebook_size: 100
+        embedding_dim: 768
+        dedup: false
+
+  - name: kmeans_k500
+    overrides:
+      ssl.layer: 9
+      training.epochs: 10
+      representation:
+        type: kmeans
+        codebook_path: artifacts/kmeans/wav2vec2_layer9_k500.pkl
+        codebook_size: 500
+        embedding_dim: 768
+        dedup: false
+
+  - name: kmeans_k1000
+    overrides:
+      ssl.layer: 9
+      training.epochs: 10
+      representation:
+        type: kmeans
+        codebook_path: artifacts/kmeans/wav2vec2_layer9_k1000.pkl
+        codebook_size: 1000
+        embedding_dim: 768
+        dedup: false
+
+  - name: kmeans_k500_dedup
+    overrides:
+      ssl.layer: 9
+      training.epochs: 10
+      representation:
+        type: kmeans
+        codebook_path: artifacts/kmeans/wav2vec2_layer9_k500.pkl
+        codebook_size: 500
+        embedding_dim: 768
+        dedup: true
+
+  # 研究 D：训练数据规模。使用研究 C 找到的第 9 层和 MLP decoder。
+  - name: train_samples_900_layer9
+    overrides:
+      ssl.layer: 9
+      data.train_samples: 900
+
+  - name: train_samples_1800_layer9
+    overrides:
+      ssl.layer: 9
+      data.train_samples: 1800
+
+  - name: train_samples_3600_layer9
+    overrides:
+      ssl.layer: 9
+      data.train_samples: 3600
+
+  - name: train_samples_5400_layer9
+    overrides:
+      ssl.layer: 9
+      data.train_samples: 5400
+
+  - name: train_samples_7200_layer9
+    overrides:
+      ssl.layer: 9
+      data.train_samples: 7200
+
+  - name: train_samples_1800
+    overrides:
+      data.train_samples: 1800
+
+  - name: train_samples_7200
+    overrides:
+      data.train_samples: 7200

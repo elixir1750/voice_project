@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="440" viewBox="0 0 820 440">
+<style>text{font-family:Arial,"PingFang SC","Microsoft YaHei",sans-serif;font-size:13px;fill:#222}.title{font-size:18px;font-weight:700}.axis{stroke:#222;stroke-width:1.2}.grid{stroke:#ddd;stroke-width:1}.wer{stroke:#2563eb;fill:none;stroke-width:2.6}.cer{stroke:#dc2626;fill:none;stroke-width:2.6}.dotw{fill:#2563eb}.dotc{fill:#dc2626}.label{font-size:12px}.legend{font-size:13px}</style>
+<text x="410.0" y="22" text-anchor="middle" class="title">Research D: WER/CER vs Training Samples</text>
+<line x1="70" y1="370.0" x2="790" y2="370.0" class="grid"/>
+<text x="60" y="374.0" text-anchor="end">0.00</text>
+<line x1="70" y1="303.0" x2="790" y2="303.0" class="grid"/>
+<text x="60" y="307.0" text-anchor="end">0.10</text>
+<line x1="70" y1="236.0" x2="790" y2="236.0" class="grid"/>
+<text x="60" y="240.0" text-anchor="end">0.19</text>
+<line x1="70" y1="169.0" x2="790" y2="169.0" class="grid"/>
+<text x="60" y="173.0" text-anchor="end">0.29</text>
+<line x1="70" y1="102.0" x2="790" y2="102.0" class="grid"/>
+<text x="60" y="106.0" text-anchor="end">0.38</text>
+<line x1="70" y1="35.0" x2="790" y2="35.0" class="grid"/>
+<text x="60" y="39.0" text-anchor="end">0.48</text>
+<line x1="70" y1="35" x2="70" y2="370" class="axis"/>
+<line x1="70" y1="370" x2="790" y2="370" class="axis"/>
+<line x1="70.0" y1="370" x2="70.0" y2="375" class="axis"/>
+<text x="70.0" y="394" text-anchor="middle">900</text>
+<line x1="172.9" y1="370" x2="172.9" y2="375" class="axis"/>
+<text x="172.9" y="394" text-anchor="middle">1800</text>
+<line x1="378.6" y1="370" x2="378.6" y2="375" class="axis"/>
+<text x="378.6" y="394" text-anchor="middle">3600</text>
+<line x1="584.3" y1="370" x2="584.3" y2="375" class="axis"/>
+<text x="584.3" y="394" text-anchor="middle">5400</text>
+<line x1="790.0" y1="370" x2="790.0" y2="375" class="axis"/>
+<text x="790.0" y="394" text-anchor="middle">7200</text>
+<text x="410.0" y="422" text-anchor="middle">training samples</text>
+<text x="18" y="220.0" text-anchor="middle" transform="rotate(-90 18 220.0)">error rate</text>
+<polyline points="70.0,70.9 172.9,128.8 378.6,163.5 584.3,189.6 790.0,195.7" class="wer"/>
+<polyline points="70.0,287.9 172.9,306.3 378.6,316.3 584.3,322.9 790.0,325.7" class="cer"/>
+<circle cx="70.0" cy="70.9" r="4.2" class="dotw"/>
+<text x="70.0" y="60.9" text-anchor="middle" class="label">0.428</text>
+<circle cx="70.0" cy="287.9" r="4.2" class="dotc"/>
+<text x="70.0" y="305.9" text-anchor="middle" class="label">0.117</text>
+<circle cx="172.9" cy="128.8" r="4.2" class="dotw"/>
+<text x="172.9" y="118.8" text-anchor="middle" class="label">0.345</text>
+<circle cx="172.9" cy="306.3" r="4.2" class="dotc"/>
+<text x="172.9" y="324.3" text-anchor="middle" class="label">0.091</text>
+<circle cx="378.6" cy="163.5" r="4.2" class="dotw"/>
+<text x="378.6" y="153.5" text-anchor="middle" class="label">0.295</text>
+<circle cx="378.6" cy="316.3" r="4.2" class="dotc"/>
+<text x="378.6" y="334.3" text-anchor="middle" class="label">0.077</text>
+<circle cx="584.3" cy="189.6" r="4.2" class="dotw"/>
+<text x="584.3" y="179.6" text-anchor="middle" class="label">0.258</text>
+<circle cx="584.3" cy="322.9" r="4.2" class="dotc"/>
+<text x="584.3" y="340.9" text-anchor="middle" class="label">0.067</text>
+<circle cx="790.0" cy="195.7" r="4.2" class="dotw"/>
+<text x="790.0" y="185.7" text-anchor="middle" class="label">0.249</text>
+<circle cx="790.0" cy="325.7" r="4.2" class="dotc"/>
+<text x="790.0" y="343.7" text-anchor="middle" class="label">0.063</text>
+<line x1="635" y1="48" x2="670" y2="48" class="wer"/><text x="680" y="52" class="legend">WER</text>
+<line x1="635" y1="70" x2="670" y2="70" class="cer"/><text x="680" y="74" class="legend">CER</text>
+</svg>

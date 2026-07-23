@@ -1,0 +1,43 @@
+experiment:
+  name: train_samples_5400_layer9
+  seed: 42
+data:
+  dataset_name: librispeech_asr
+  dataset_config: clean
+  train_split: train.100
+  validation_split: validation
+  streaming: true
+  train_samples: 5400
+  validation_samples: 500
+  sample_rate: 16000
+  shuffle_buffer: 2000
+tokenizer:
+  type: character_ctc
+ssl:
+  type: wav2vec2
+  model_name: facebook/wav2vec2-base
+  frozen: true
+  layer: 9
+representation:
+  type: continuous
+decoder:
+  type: mlp
+  hidden_dim: 512
+  dropout: 0.1
+training:
+  epochs: 10
+  batch_size: 8
+  gradient_accumulation_steps: 1
+  learning_rate: 0.001
+  scheduler: cosine
+  min_learning_rate: 1.0e-05
+  early_stopping_patience: 3
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  num_workers: 1
+  pin_memory: true
+  amp: true
+runtime:
+  device: auto
+  output_dir: outputs/train_samples_5400_layer9
+  cache_dir: hf_cache

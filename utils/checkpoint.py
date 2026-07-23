@@ -26,6 +26,7 @@ def save_checkpoint(
     config: Mapping[str, Any],
     tokenizer: CharacterCTCTokenizer,
     training_state: Mapping[str, Any],
+    scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
 ) -> None:
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -33,6 +34,9 @@ def save_checkpoint(
     payload = {
         "model_state": model.state_dict(),
         "optimizer_state": optimizer.state_dict() if optimizer is not None else None,
+        "scheduler_state": (
+            scheduler.state_dict() if scheduler is not None else None
+        ),
         "config": deepcopy(dict(config)),
         "tokenizer": tokenizer.state_dict(),
         "training_state": deepcopy(dict(training_state)),
@@ -65,9 +69,13 @@ def restore_checkpoint(
     payload: Mapping[str, Any],
     model: nn.Module,
     optimizer: torch.optim.Optimizer | None = None,
+    scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
     strict: bool = True,
 ) -> None:
     model.load_state_dict(payload["model_state"], strict=strict)
     optimizer_state = payload.get("optimizer_state")
     if optimizer is not None and optimizer_state is not None:
         optimizer.load_state_dict(optimizer_state)
+    scheduler_state = payload.get("scheduler_state")
+    if scheduler is not None and scheduler_state is not None:
+        scheduler.load_state_dict(scheduler_state)

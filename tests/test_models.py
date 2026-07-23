@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import pickle
 from types import SimpleNamespace
 
 import pytest
 import torch
+from sklearn.cluster import MiniBatchKMeans
 from torch import nn
 
-from models.ctc_decoder import LinearCTCDecoder, MLPCTCDecoder
+from models.ctc_decoder import (
+    LinearCTCDecoder,
+    MLPCTCDecoder,
+    TransformerCTCDecoder,
+)
 from models.interfaces import SpeechFeatures
 from models.registry import build_decoder, build_representation, build_ssl
 from models.ssl_extractor import (
@@ -39,6 +45,65 @@ def test_mlp_decoder_preserves_time_lengths() -> None:
     assert output.lengths.tolist() == [5, 4]
 
 
+def test_transformer_decoder_preserves_shape_lengths_and_masks_padding() -> None:
+    decoder = TransformerCTCDecoder(
+        input_dim=8,
+        vocab_size=30,
+        model_dim=8,
+        num_heads=2,
+        num_layers=1,
+        feedforward_dim=16,
+        dropout=0.0,
+        max_length=16,
+    )
+
+    output = decoder(torch.randn(2, 5, 8), torch.tensor([5, 3]))
+
+    assert output.logits.shape == (2, 5, 30)
+    assert output.lengths.tolist() == [5, 3]
+    assert decoder.last_padding_mask.tolist() == [
+        [False, False, False, False, False],
+        [False, False, False, True, True],
+    ]
+
+
+def test_transformer_decoder_requires_heads_to_divide_model_dim() -> None:
+    with pytest.raises(ValueError, match="divisible"):
+        TransformerCTCDecoder(
+            input_dim=8,
+            vocab_size=30,
+            model_dim=10,
+            num_heads=3,
+        )
+
+
+def test_transformer_decoder_rejects_non_positive_dimensions() -> None:
+    with pytest.raises(ValueError, match="positive"):
+        TransformerCTCDecoder(
+            input_dim=8,
+            vocab_size=30,
+            model_dim=8,
+            num_heads=0,
+        )
+
+
+def test_registry_builds_transformer_decoder() -> None:
+    decoder = build_decoder(
+        {
+            "type": "transformer",
+            "model_dim": 8,
+            "num_heads": 2,
+            "num_layers": 1,
+            "feedforward_dim": 16,
+            "dropout": 0.0,
+        },
+        8,
+        30,
+    )
+
+    assert isinstance(decoder, TransformerCTCDecoder)
+
+
 def test_registry_builds_decoder_and_continuous_representation() -> None:
     decoder = build_decoder({"type": "linear", "dropout": 0.0}, 8, 30)
     representation = build_representation({"type": "continuous"}, 8)
@@ -53,6 +118,77 @@ def test_registry_builds_decoder_and_continuous_representation() -> None:
     assert isinstance(decoder, LinearCTCDecoder)
     assert represented is features
     assert representation.output_dim == 8
+
+
+def test_kmeans_representation_embeds_cluster_assignments(tmp_path) -> None:
+    data = torch.tensor(
+        [[0.0, 0.0], [0.1, 0.0], [4.0, 4.0], [4.1, 4.0]],
+        dtype=torch.float32,
+    ).numpy()
+    model = MiniBatchKMeans(n_clusters=2, random_state=0, n_init=1).fit(data)
+    path = tmp_path / "kmeans.pkl"
+    path.write_bytes(
+        pickle.dumps({"model": model, "codebook_size": 2, "input_dim": 2})
+    )
+    representation = build_representation(
+        {
+            "type": "kmeans",
+            "codebook_path": str(path),
+            "codebook_size": 2,
+            "embedding_dim": 3,
+        },
+        input_dim=2,
+    )
+    features = SpeechFeatures(
+        values=torch.tensor([[[0.0, 0.0], [4.0, 4.0], [0.1, 0.0]]]),
+        lengths=torch.tensor([3]),
+        feature_dim=2,
+    )
+
+    represented = representation(features)
+
+    assert represented.values.shape == (1, 3, 3)
+    assert represented.lengths.tolist() == [3]
+    assert represented.feature_dim == 3
+    assert represented.metadata["codebook_size"] == 2
+    assert represented.metadata["token_lengths"].tolist() == [3]
+
+
+def test_kmeans_representation_can_deduplicate_consecutive_tokens(
+    tmp_path,
+) -> None:
+    data = torch.tensor(
+        [[0.0, 0.0], [0.1, 0.0], [4.0, 4.0], [4.1, 4.0]],
+        dtype=torch.float32,
+    ).numpy()
+    model = MiniBatchKMeans(n_clusters=2, random_state=0, n_init=1).fit(data)
+    path = tmp_path / "kmeans.pkl"
+    path.write_bytes(
+        pickle.dumps({"model": model, "codebook_size": 2, "input_dim": 2})
+    )
+    representation = build_representation(
+        {
+            "type": "kmeans",
+            "codebook_path": str(path),
+            "codebook_size": 2,
+            "embedding_dim": 2,
+            "dedup": True,
+        },
+        input_dim=2,
+    )
+    features = SpeechFeatures(
+        values=torch.tensor(
+            [[[0.0, 0.0], [0.1, 0.0], [4.0, 4.0], [4.1, 4.0]]]
+        ),
+        lengths=torch.tensor([4]),
+        feature_dim=2,
+    )
+
+    represented = representation(features)
+
+    assert represented.values.shape == (1, 2, 2)
+    assert represented.lengths.tolist() == [2]
+    assert represented.metadata["dedup"] is True
 
 
 def test_registry_rejects_unknown_component() -> None:

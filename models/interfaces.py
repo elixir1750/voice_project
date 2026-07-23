@@ -20,6 +20,7 @@ class SpeechFeatures:
 class DecoderOutput:
     logits: torch.Tensor
     lengths: torch.Tensor
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class SSLExtractor(nn.Module, ABC):

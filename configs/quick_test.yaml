@@ -32,7 +32,11 @@ decoder:
 training:
   epochs: 1
   batch_size: 2
+  gradient_accumulation_steps: 1
   learning_rate: 0.001
+  scheduler: none
+  min_learning_rate: 0.0
+  early_stopping_patience: 0
   weight_decay: 0.0
   grad_clip: 1.0
   num_workers: 1
